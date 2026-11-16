@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "user1.deadlock-ingest",
+  "name": "Deadlock Sync",
+  "version": "1.2.0",
+  "author": "user1",
+  "description": "Live Deadlock sync and automatic history recovery with status and Quit controls.",
+  "kinds": [
+    "bar-widget",
+    "service"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml",
+    "service": "Service.qml"
+  },
+  "barWidget": {
+    "displayName": "Deadlock Sync",
+    "description": "Deadlock match upload status and controls.",
+    "category": "Status",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}

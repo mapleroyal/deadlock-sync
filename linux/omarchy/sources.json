@@ -1,0 +1,148 @@
+{
+  "files": [
+    {
+      "path": "install.py",
+      "sha256": "3cbd4e475d76f484c8bf1724544342be957f346e904c6d2f09c5476b024ec9b6",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "plugin/BarWidget.qml",
+      "sha256": "364d7514d5702c026ea5736546311896ec08355e34e4168d10361b6020b7b374",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "plugin/Model.js",
+      "sha256": "3f03ff5dd852f2c17c683237eb7f041816c8ecc80712e280bb0d61a0e8953242",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "plugin/Service.qml",
+      "sha256": "9ff82f9e307fe849ec8798f7a8f6bc6dd4da9f20ab57886f2cc05afa26c8123c",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "plugin/backend/control.py",
+      "sha256": "162efdeb1d8c07d9f5c7c83f2eace7dc872fd4955a0e1aa68e4443ed4ce92f7e",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "plugin/backend/progress.py",
+      "sha256": "f16d24927795e37d00a30c46a622e0cea735194d143baf018822371b8fe112d4",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "plugin/backend/recovery.py",
+      "sha256": "eed1b67a8e80d718b012733b1b2ff1fec5ee23f20c22d6f3a9c9b0a8d243dd14",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "plugin/i18n/en.json",
+      "sha256": "209e168109348eb9dc2d70d676d4addaaceebe8ee4696a4e25e00a80222b83cb",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "plugin/manifest.json",
+      "sha256": "e92a9c4dac6b42b151079a3285a2e669840941e5229f85fcc63b117fbe75babb",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "scripts/deadlock-backfill",
+      "sha256": "366901eafdc561e13a87ea3e10d5e1c27db9522f860b85ce25359b3be9e9a6f8",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "templates/deadlock-api-ingest-backfill.service",
+      "sha256": "36dc9e2f6b4695e4298d7eebf9ac2481a4a8764c2563b648980a175f543e4297",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "templates/deadlock-api-ingest.service",
+      "sha256": "b710221581e9be7f07e28666d1df969dd88035037c84c1cb944a1019c1f8a452",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "templates/deadlock-backfill.desktop",
+      "sha256": "360ed66486127504d919190bc7f8e916286f2e54b859c97b391def8a10f72cf1",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "tests/model.test.cjs",
+      "sha256": "3a7bbbbff20b882522ca139dd1d94a09990fe8985e13c364c0f32419aa51e972",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "tests/qml/KeyboardPanel.qml",
+      "sha256": "ff1ecebbfd815d75cc0ce52c936a4517f66b53b07a55f75df36fe56539d46450",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "tests/qml/run.py",
+      "sha256": "f183b2b96779f80654c193df143e1ecc76a9489a57bfd66658e840043968e853",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "tests/qml/shell.qml",
+      "sha256": "c849fe2047e224988b74600a49c2add0cbe8a21b879f9ea1fe70d773f0805a04",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "tests/test_control.py",
+      "sha256": "44b975a761f12e489aa5ca56857d44180ab2063e4fe604eea934eb2489196472",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "tests/test_install.py",
+      "sha256": "0e4011e2a012cd9d15186c7a0f5242948d153beeb227e0c8c5159c9b4c2cb83c",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "tests/test_launchers.py",
+      "sha256": "2a59090b3667d60fe279589f9721061f8f86f356edb26ac280601c7e3ae68e32",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "tests/test_progress.py",
+      "sha256": "d0289946bacbff7aa3aa5c060087144e9f2e411484632e959341918af641cb43",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "tests/test_recovery_policy.py",
+      "sha256": "568d52cd4ce3eb74af0ee4accc2e7c7eba2079bb55e6e6b7c5eeaca64d103041",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "upstream.json",
+      "sha256": "61caaecb3986442f3249d7b534518522b43ed2578bf585cb84a48995f19a5ede",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "verify.py",
+      "sha256": "d0b4c2ee64d0cbbc88f16970184b865831d8d86361cab129f7bf08a1855203d3",
+      "mode": "0o644",
+      "executable": false
+    }
+  ]
+}

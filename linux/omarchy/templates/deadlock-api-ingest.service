@@ -1,0 +1,21 @@
+[Unit]
+Description=Deadlock match sync (game lifetime, no community recovery)
+Documentation=https://github.com/deadlock-api/deadlock-api-ingest
+PartOf=graphical-session.target
+
+[Service]
+Environment=RUST_LOG=info,deadlock_api_ingest::game_memory=debug
+Type=simple
+ExecStart=@INGEST_EXEC@ --no-gc
+ExecStartPost=/usr/bin/touch %t/deadlock-api-ingest-bar.status
+ExecStopPost=/usr/bin/touch %t/deadlock-api-ingest-bar.status
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=10
+Nice=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deadlock-api-ingest
+# The memory helper needs its capability and access to the game's process.
+# Deliberately no NoNewPrivileges, PrivateTmp, or PrivateUsers.
+# Started/stopped by user1.deadlock-ingest shell plugin; never enabled at login.

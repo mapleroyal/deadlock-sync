@@ -1,0 +1,20 @@
+{
+  "repository": "https://github.com/deadlock-api/deadlock-api-ingest",
+  "version": "v0.4.8",
+  "commit": "ef1882306163826809cb2768a39b4c4f8b258545",
+  "architecture": "x86_64",
+  "assets": {
+    "memoryHelper": {
+      "name": "deadlock-api-ingest-memgrant-linux",
+      "url": "https://github.com/deadlock-api/deadlock-api-ingest/releases/download/v0.4.8/deadlock-api-ingest-memgrant-linux",
+      "sha256": "9ff5ff6b1067d311be1fecfcea27415e36dac2b64a43d25b1a7d82d9a000ce36",
+      "size": 357168
+    },
+    "ingest": {
+      "name": "deadlock-api-ingest-ubuntu-latest",
+      "url": "https://github.com/deadlock-api/deadlock-api-ingest/releases/download/v0.4.8/deadlock-api-ingest-ubuntu-latest",
+      "sha256": "fdd2d0b1cb51292d282b9f4e6610ecd52a07e143ce920ac11b4cad900e7f1118",
+      "size": 20245184
+    }
+  }
+}

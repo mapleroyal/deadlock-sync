@@ -1,0 +1,26 @@
+# Build outputs and local development
+bin/
+obj/
+publish/
+.vs/
+*.user
+*.exe
+*.dll
+*.pdb
+*.zip
+
+# Local account, game and runtime data
+data/
+logs/
+state/
+*.log
+*.db
+*.db-*
+*.sqlite*
+recovery.json
+completion.json
+*.invalid
+session*.json
+match-history*.json
+pending-matches*.json
+.env*

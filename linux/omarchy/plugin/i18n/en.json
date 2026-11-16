@@ -1,0 +1,70 @@
+{
+  "name": "Deadlock Sync",
+  "state.syncing": "Syncing matches",
+  "state.backfill": "Backfilling match history",
+  "state.paused": "Stopped for this game session",
+  "state.stopped": "Sync is stopped",
+  "state.idle": "Starts when Deadlock opens",
+  "state.changing": "Updating sync service",
+  "state.failed": "Sync needs attention",
+  "state.error": "Sync needs attention",
+  "detail.live": "Live memory reading is enabled. History recovery waits while you play.",
+  "detail.backfill": "Recovering your own history automatically. Opening Deadlock pauses recovery and gives live sync priority.",
+  "detail.paused": "Automatic recovery is off. Sync starts again next time you open Deadlock or launch Deadlock Match Backfill.",
+  "detail.idle": "Starts with Deadlock or when you launch Deadlock Match Backfill.",
+  "quit": "Quit syncing",
+  "resume": "Resume syncing",
+  "memory": "Memory in use: %1 MiB",
+  "tooltip": "%1 — %2",
+  "phase.preparing": "Checking Steam match history…",
+  "phase.recovering": "Recovering missing match data",
+  "phase.watching": "Watching for new matches",
+  "phase.reading": "Reading the current game",
+  "phase.waiting": "Waiting for new match data",
+  "phase.limited": "Steam rate limit reached",
+  "phase.failed": "Sync reported a problem",
+  "phase.complete": "Match history processed",
+  "progress.processed": {
+    "one": "%1 of %2 missing match processed",
+    "other": "%1 of %2 missing matches processed"
+  },
+  "progress.uploaded": {
+    "one": "%1 match uploaded this pass",
+    "other": "%1 matches uploaded this pass"
+  },
+  "progress.failed": {
+    "one": "%1 match could not be recovered",
+    "other": "%1 matches could not be recovered"
+  },
+  "progress.history": {
+    "one": "%1 match in this account’s history",
+    "other": "%1 matches in this account’s history"
+  },
+  "progress.updated": "Last activity: %1",
+  "state.recovery.off": "Automatic recovery enabled",
+  "state.recovery.working": "Preparing history recovery",
+  "state.recovery.cooldown": "Waiting after Steam rate limit",
+  "state.recovery.retry": "History recovery will retry",
+  "state.recovery.game": "History recovery waits for Deadlock",
+  "state.recovery.caught_up": "Available history processed",
+  "state.recovery.attention": "History recovery needs attention",
+  "detail.caught_up": "No recovery is due. We will check again after your next game session.",
+  "detail.game": "Live sync takes priority. History recovery resumes after Deadlock closes, once any cooldown ends.",
+  "detail.recovery.rate_limit": "Steam rate-limited recovery. Our 24-hour cooldown includes a short random delay; Steam did not provide a reset time.",
+  "detail.recovery.transient": "A temporary error interrupted recovery. The next attempt is scheduled automatically.",
+  "detail.recovery.account_in_use": "Steam reports this account is playing a game. Recovery will retry when the account is available.",
+  "detail.recovery.auth": "Sign in to Steam with Remember me, then choose Try again.",
+  "detail.recovery.unavailable": "Some history is unavailable. Automatic recovery has stopped for those matches.",
+  "detail.recovery.state_store": "Recovery tracking could not be read or saved. Check local storage access, then choose Try again.",
+  "detail.recovery.settling": "Waiting briefly after the game closes before checking history.",
+  "detail.recovery.": "Automatic recovery is enabled. Live sync always takes priority when Deadlock is open.",
+  "progress.lastPass": "Last recovery pass",
+  "recovery.nextAttempt": "Earliest next attempt: %1",
+  "recovery.tryAgain": "Try again",
+  "recovery.skipped": {
+    "one": "%1 older match reached the recovery attempt limit.",
+    "other": "%1 older matches reached the recovery attempt limit."
+  },
+  "detail.recovery.corrupt": "Saved recovery tracking needs repair before automatic retries can resume. Live syncing can still run.",
+  "detail.live_failed": "Live syncing stopped unexpectedly. Choose Try again to restart it; your game keeps running."
+}

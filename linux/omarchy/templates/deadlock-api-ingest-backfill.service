@@ -1,0 +1,17 @@
+[Unit]
+Description=Deadlock own-history recovery pass (managed by the bar)
+Documentation=https://github.com/deadlock-api/deadlock-api-ingest
+PartOf=graphical-session.target
+
+[Service]
+Environment=RUST_LOG=info
+Type=oneshot
+ExecStart=@INGEST_EXEC@ --own-matches
+ExecStartPre=/usr/bin/touch %t/deadlock-api-ingest-bar.status
+ExecStopPost=/usr/bin/python3 -B @CONTROL_EXEC@ record-finished
+TimeoutStartSec=6h
+TimeoutStopSec=10
+Nice=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=deadlock-api-ingest-backfill

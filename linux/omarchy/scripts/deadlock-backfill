@@ -1,0 +1,44 @@
+#!/usr/bin/env python3
+"""Enable automatic own-history recovery; live gameplay always takes priority."""
+import argparse
+from datetime import datetime
+import json
+from pathlib import Path
+import subprocess
+import sys
+
+CONTROL = Path.home() / '.config/omarchy/plugins/user1.deadlock-ingest/backend/control.py'
+
+def notify(message, urgency='normal'):
+    subprocess.run(['/usr/bin/notify-send', '--app-name=Deadlock Sync', '--icon=applications-games', '--urgency='+urgency,
+                    'Deadlock Match Backfill', message], check=False)
+
+def main():
+    subprocess.run(['omarchy-shell', 'user1.deadlock-ingest', 'status'],
+                   check=True, capture_output=True, text=True, timeout=3)
+    process = subprocess.run(['/usr/bin/python3', '-B', str(CONTROL), 'enable'],
+                             capture_output=True, text=True, timeout=35)
+    if process.returncode:
+        raise RuntimeError('Could not enable automatic history recovery.')
+    status = json.loads(process.stdout)
+    if not isinstance(status, dict):
+        raise ValueError('Invalid controller response')
+    recovery = status.get('recovery', {})
+    if not isinstance(recovery, dict):
+        raise ValueError('Invalid recovery status')
+    message = 'Automatic history recovery is enabled. Live sync takes priority while you play. Use the top-bar gamepad icon for progress or to quit.'
+    next_at = recovery.get('next_at')
+    if recovery.get('phase') in {'cooldown', 'retry'} and isinstance(next_at, (int, float)) and 0 < next_at < 4102444800:
+        retry = datetime.fromtimestamp(next_at).astimezone().strftime('%a %b %d at %I:%M %p')
+        message = 'Automatic history recovery is enabled. Next attempt: ' + retry + '. Check the top-bar gamepad icon for details or to quit.'
+    elif recovery.get('phase') == 'attention':
+        message = 'History recovery needs attention. Open the top-bar gamepad icon for details. Live sync can still run while you play.'
+    print(message); notify(message); return 0
+
+if __name__ == '__main__':
+    argparse.ArgumentParser(description=__doc__).parse_args()
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+        notify('Could not enable history recovery. Check the Deadlock Sync bar item and its installation.', 'critical')
+        sys.exit(1)

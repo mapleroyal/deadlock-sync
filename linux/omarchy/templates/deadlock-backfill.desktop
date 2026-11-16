@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Deadlock Match Backfill
+Comment=Enable automatic history recovery with live sync taking priority during gameplay
+Exec=@BACKFILL_EXEC@
+Icon=applications-games
+Terminal=false
+Categories=Game;
+Keywords=Deadlock;Statlocker;matches;sync;backfill;
