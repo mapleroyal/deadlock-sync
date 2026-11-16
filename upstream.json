@@ -4,6 +4,10 @@
   "version": "v0.4.8",
   "commit": "ef1882306163826809cb2768a39b4c4f8b258545",
   "target": "windows-x86_64",
+  "license": {
+    "url": "https://raw.githubusercontent.com/deadlock-api/deadlock-api-ingest/v0.4.8/LICENSE",
+    "sha256": "db8dd69abbbf964e53908baddba723e32934f26edab06f76aaf4d40f6790a0ea"
+  },
   "asset": {
     "name": "deadlock-api-ingest-windows-latest.exe",
     "url": "https://github.com/deadlock-api/deadlock-api-ingest/releases/download/v0.4.8/deadlock-api-ingest-windows-latest.exe",

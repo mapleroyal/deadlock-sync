@@ -12,12 +12,18 @@ internal static class Program
         string? smoke = Option(args, "--smoke-test");
         if (smoke is not null) return Smoke.RunAsync(smoke).GetAwaiter().GetResult();
         string testRoot = Option(args, "--test-root") is { } path ? Path.GetFullPath(path) : "";
-        string command = args.Contains("--exit") ? "exit" : args.Contains("--quit-sync") ? "quit"
-            : args.Contains("--enable") ? "enable" : args.Contains("--show") ? "show"
-            : args.Contains("--status") ? "status" : "background";
+        string command = ResolveCommand(args);
         string? statusFile = Option(args, "--status");
+        if (command is "prepare-install" or "prepare-uninstall")
+            return InstallPreparation.Run(command == "prepare-install", testRoot, Option(args, "--report"), args.Contains("--show-errors"));
         try
         {
+            if (testRoot.Length == 0 && command is not ("exit" or "quit" or "status") && InstallPreparation.SetupRunning())
+            {
+                if (command != "background")
+                    MessageBox.Show("Setup is running. Finish setup, then open Deadlock Sync.", "Deadlock Sync", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return 5;
+            }
             using var instance = new SingleInstance(testRoot);
             if (!instance.OwnsMutex)
             {
@@ -43,6 +49,14 @@ internal static class Program
             return 1;
         }
     }
+
+    internal static string ResolveCommand(string[] args) =>
+        args.Contains("--prepare-uninstall") ? "prepare-uninstall" : args.Contains("--prepare-install") ? "prepare-install"
+        : args.Contains("--exit") ? "exit" : args.Contains("--quit-sync") ? "quit"
+        : args.Contains("--status") ? "status"
+        : args.Contains("--enable") && args.Contains("--show") ? "enable-show"
+        : args.Contains("--enable") ? "enable" : args.Contains("--show") ? "show"
+        : args.Length == 0 ? "enable-show" : "background";
 
     internal static string? Option(string[] args, string name)
     {

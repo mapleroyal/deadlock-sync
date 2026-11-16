@@ -1,14 +1,22 @@
 # Third party components
 
-Deadlock API Ingest is a separate upstream program. Installers fetch its pinned
-official release and verify its SHA-256 before use. Its source, license and
-release notices are maintained at
+Deadlock API Ingest is a separate upstream program distributed under the MIT
+license. The Windows installer bundles its pinned official executable and
+`INGEST-LICENSE.txt`; the build verifies the pinned executable and license
+hashes, and the app verifies the executable before use. The Linux installer
+fetches its pinned executable and verifies its SHA-256. Upstream source and
+notices are maintained at
 https://github.com/deadlock-api/deadlock-api-ingest.
 
 Self-contained Windows builds include Microsoft's .NET runtime and Windows
 Forms libraries, distributed under their own licenses. Their notices are
-included in the Windows archive as `DOTNET-LICENSE.txt` and
+included in the installed Windows app directory as `DOTNET-LICENSE.txt` and
 `DOTNET-THIRD-PARTY-NOTICES.txt`.
+
+The Windows setup and uninstaller use NSIS. `NSIS-NOTICES.txt`, included beside
+the installed app and sourced from the official Debian NSIS 3.13 distribution's
+copyright file, contains the runtime, plugin and compression notices, including
+the LZMA exception. Its source copy is in `windows/installer/NSIS-NOTICES.txt`.
 
 The Linux UI uses the target's installed Omarchy shell and Quickshell. Those
 programs are prerequisites and are not included in this archive. The stable

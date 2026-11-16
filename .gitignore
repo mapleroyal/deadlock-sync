@@ -8,6 +8,9 @@ publish/
 *.dll
 *.pdb
 *.zip
+*.tar.gz
+__pycache__/
+*.pyc
 
 # Local account, game and runtime data
 data/

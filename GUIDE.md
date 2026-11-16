@@ -1,6 +1,11 @@
-# Recreate Deadlock Sync on Windows
+# Deadlock Sync implementation guide
 
-This is the implementation contract for the Windows tray app. Read it with
+Normal Windows users install the ready-to-use
+[0.1.1 setup executable](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.1.1/Deadlock-Sync-0.1.1-Setup.exe):
+double-click, then Next, Install, Finish. They do not need a coding agent,
+terminal, SDK, separate .NET installation or administrator access.
+
+This is the maintenance contract for the Windows tray app. Read it with
 [UPSTREAM.md](UPSTREAM.md) and [upstream.json](upstream.json). The architecture
 and policy are already decided; commands and small implementation details can
 be adapted to the target. The Linux reference is in `linux/omarchy/`.
@@ -28,13 +33,15 @@ Serialize all lifecycle transitions. Re-check for a game immediately before
 starting history recovery.
 
 Use a per-user/session single-instance mutex and a current-user-only named pipe.
-A second launcher invocation enables the existing app instead of creating a
-second uploader. Do not accept arbitrary executable paths or shell commands
-through IPC.
+A second launcher invocation enables the existing app and shows its status
+instead of creating a second uploader. No arguments and `--enable --show` both
+do this; explicit `--background` is the silent login path. Do not accept
+arbitrary executable paths or shell commands through IPC.
 
 ## 2. Own exactly one ingestion worker
 
-Download and SHA-256-check the raw EXE pinned in `upstream.json`. Save it as
+At build time, download and SHA-256-check the raw EXE pinned in `upstream.json`.
+Bundle it in the installer, then verify it again before use. Save it as
 `deadlock-api-ingest.exe`; never rename it to a name containing `-setup`.
 
 | Situation | Child command |
@@ -154,16 +161,62 @@ overflow; explain how to pin it rather than changing Explorer's global settings.
 
 ## 6. Install cleanly and enroll Steam locally
 
-Install app files under `%LOCALAPPDATA%\DeadlockSync\app\`. The installer
-verifies downloads, creates a Start Menu **Deadlock Sync** shortcut and an HKCU
-Run entry for `--background`. Run as the logged-in user. Keep install/uninstall
-idempotent; stop this app through IPC before replacing files. No SDK, admin
-service, scheduled SYSTEM task or global execution-policy change is needed.
+Ship a conventional native NSIS setup executable, named
+`Deadlock-Sync-0.1.1-Setup.exe`. The wizard is Next, Install, Finish, with **Start
+Deadlock Sync** checked on the Finish page. Release installation is not a
+PowerShell script or an agentic procedure. Run as the logged-in Steam user with
+`RequestExecutionLevel user`; do not request elevation. Target Windows 10 or
+newer, x64. Bundle the self-contained app, pinned ingest executable,
+`INGEST-LICENSE.txt`, .NET license/notices and `NSIS-NOTICES.txt`. Installation
+needs no downloads, terminal, SDK or separate runtime; syncing needs internet.
 
-Backfill uses Steam's remembered sessions and current-user DPAPI. The user signs
-in and completes Steam Guard in Steam itself. The wrapper never asks for, reads
-or stores a password/token. Live memory sync can work even when remembered
-credentials are unavailable.
+Install app files under `%LOCALAPPDATA%\DeadlockSync\app\`. Create a Start Menu
+**Deadlock Sync** shortcut for `--enable --show`. The optional HKCU Run entry
+uses `--background`: checked by default on a fresh install, with the previous
+choice retained on upgrades. Register **Deadlock Sync** in Settings' Installed
+apps using HKCU's **64-bit registry view**, including display version, icon,
+native uninstall command and quiet uninstall command. Use a per-user native
+uninstaller, not a scheduled task or service. Leave unrelated startup entries
+and Steam launch options unchanged.
+
+Keep file replacement transactional. The setup/uninstall wizard holds the
+session-local named mutex `Local\DeadlockSync.Setup`; another setup stops
+politely, and ordinary app launches ask the user to finish setup first. Existing
+controllers may keep running until installation actually begins. Stage the new
+payload under the installer's temporary directory and run its app with
+`--prepare-install --show-errors` before replacing anything (omit `--show-errors`
+in silent mode). This helper checks
+the adjacent engine's pinned hash, asks the current user/session controller to
+exit through IPC, retains its process handle and waits for actual termination
+and singleton release. It then rejects conflicting upstream instances or
+startup entries. It does not kill processes by name or reset any saved state.
+Nonzero preparation results stop setup with an actionable error. Test-root
+instances are isolated from production preparation and the setup gate.
+
+Copy into the dedicated `app.new` staging directory, mark the completed payload,
+rename any existing `app` to `app.previous`, then rename `app.new` to `app`.
+Restore the previous directory if the final rename fails, checking restoration
+before claiming success. A retry can remove reserved incomplete staging and a
+backup superseded by a marked complete payload; preserve ambiguous previous
+copies for diagnosis. Check shortcut, startup and uninstall registration writes,
+and retain an uninstall retry entry if owned files cannot be removed. Keep
+private state outside these directories. Release the setup
+gate **before** launching `--enable --show` at Finish so the tray and status
+window appear immediately. Cancelling before installation must not stop the
+existing app. The build entry point is `tools/build-setup.py`; the required
+inputs, optional verified cached inputs and release packaging commands are in
+[windows/README.md](windows/README.md). Maintainers may use `/S`,
+`/NOAUTOSTART` and `/NOSTART` for controlled automation; the wizard remains the
+user-facing path.
+
+Backfill uses Steam's remembered sessions and current-user DPAPI. A remembered
+session is a reusable login saved by Steam for this Windows account. The user
+signs in, allows Steam to remember the login and completes Steam Guard in Steam
+itself. The bundled ingestion engine uses that saved session to request match
+history while the game is closed. The wrapper never asks for, reads or stores a
+password/token. A missing or expired session needs a Steam sign-in followed by
+Enable syncing; it does not require adding credentials to this app. Live memory
+sync can work even when remembered credentials are unavailable.
 
 Upstream processes **all decryptable remembered Steam accounts** and has no
 select-account option. On a shared/multi-account Steam installation, explain
@@ -171,11 +224,14 @@ that scope and have the owner manage saved accounts in Steam or accept it.
 Do not silently edit Steam token files or claim only the currently visible
 account will be processed.
 
-Detect existing upstream auto-start entries/instances and explain conflicts.
-Do not run this controller alongside its default GUI watcher. Preserve all
+Do not run this controller alongside upstream's default GUI watcher. Preserve all
 upstream data in `%APPDATA%\deadlock-api-ingest\`, especially `gc-quota.json`.
-Uninstall removes only this app, its shortcut and startup entry; retain cooldowns
-and upstream attempts by default. Upgrades must also preserve those files.
+From **Settings → Apps → Installed apps → Deadlock Sync → Uninstall**, the
+native uninstaller calls `--prepare-uninstall --show-errors` to stop this app
+through IPC and wait for it to exit. Unrelated upstream conflicts do not block
+removing this controller. Remove only owned app files, shortcut, startup entry
+and Installed apps registration; retain private controller state, cooldowns and
+upstream attempts. Upgrades must also preserve those files.
 
 When moving the same account between Linux and Windows, preserve the later
 known cooldown and existing attempt history. Keep only one recovery owner
@@ -188,6 +244,10 @@ Use fake workers and clocks for automation; never induce a real throttle.
 
 | Check | Required result |
 | --- | --- |
+| Fresh install | Ordinary user completes wizard without terminal/runtime download; default Finish opens one tray/status window; startup checkbox defaults on. |
+| Update/cancel | Update waits for old controller exit and preserves state/startup choice; cancellation before installation leaves it running. |
+| Setup conflict/failure | No overlapping setup or new controller during replacement; preparation failure leaves prior app files/state intact. |
+| Native uninstall | Installed apps removal closes owned work and removes app/startup/shortcut while retaining private recovery records. |
 | Idle/cooldown | One small controller, zero uploaders; tray gives reason and next attempt. |
 | Duplicate launch | One controller and at most one worker. |
 | Game starts during recovery | Recovery fully stopped before live starts; pending progress retained. |

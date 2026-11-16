@@ -1,8 +1,50 @@
 # Release validation
 
-Version 0.1.0, November 16, 2026. Initial preview release.
+Version 0.1.1, November 16, 2026. Conventional Windows installer preview.
 
-## Windows
+## Windows installer 0.1.1
+
+The Windows download is now one offline NSIS setup executable containing the
+self-contained app, verified upstream engine and third-party notices. It installs
+for the current user without elevation and registers a Start Menu shortcut,
+optional login startup and a normal Windows uninstall entry. Installation and
+updates preserve private recovery state and upstream attempt records.
+
+The application compiled with zero warnings and errors; all 55 Core checks passed.
+The release builder rejected an altered upstream executable before producing an
+installer. App preparation also verifies the bundled engine before stopping an
+existing controller. Setup uses bounded IPC shutdown and a temporary launch gate
+so a login or shortcut cannot start another controller during file replacement.
+
+The wizard was exercised as a non-elevated interactive user in the Windows 11
+gaming VM. Upgrading the existing 0.1.0 installation preserved its startup
+choice; selecting startup created the expected entry. Finish opened one enabled
+tray controller and a visible status window, respecting the real existing
+cooldown with zero ingestion workers. The Start Menu shortcut had the correct
+target, arguments and installed working directory, and Installed apps contained
+the native uninstall entry. Cancelling before Install left the previous app and
+state unchanged. All eight native smoke checks passed, including launch-command
+routing, rejection of an unverified engine and the earlier process/job checks.
+
+Active-app upgrade, duplicate-setup rejection, background-launch suppression
+during setup, fresh-install startup/launch defaults and ordinary uninstall passed.
+An unrelated synthetic engine made silent setup stop without changing the payload
+or opening a dialog. A deliberately locked owned file prevented full uninstall;
+the remaining file and Windows uninstall retry entry were retained, along with
+recovery state and upstream records. Retrying after releasing the lock completed
+removal. The final setup artifact's fresh wizard, default Finish launch and
+Welcome/Finish text were rechecked after the visual correction. NSIS's outer silent-uninstall launcher does
+not propagate its temporary child process's exit code; the maintainer instructions
+explain completion verification.
+
+The application SHA-256 is
+`5213ff8121f78ba61ed00b4acf1991af37304ef43d13f515a02b329bb9998006`.
+The setup executable and Linux archive have separate checksums in `SHA256SUMS.txt`.
+
+This community build is unsigned. A browser-downloaded copy can receive Windows
+reputation/publisher prompts; the VM transfer does not test that download path.
+
+## Windows application acceptance from 0.1.0
 
 Built on Linux with .NET SDK 10.0.404, targeting Windows x64 with .NET 10.0.15
 and Windows Forms included. The gaming VM required no SDK or runtime install.
@@ -36,7 +78,7 @@ The observed live worker used about 15.4 MiB working set and 2.36 MiB private me
 These are observations on the test VM, not fixed
 resource limits. The self-contained executable is approximately 111 MiB on disk.
 
-The published executable's SHA-256 is
+The tested 0.1.0 executable's SHA-256 is
 `9492a117c463b85acc0110043f5d2da338ffd3cf13586ad57f0e34cdf9215819`.
 The release archive has a separate checksum in `SHA256SUMS.txt`.
 

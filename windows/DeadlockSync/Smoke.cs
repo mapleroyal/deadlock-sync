@@ -12,6 +12,23 @@ internal static class Smoke
         bool ok = true;
         try
         {
+            bool routing = Program.ResolveCommand(["--enable", "--show"]) == "enable-show"
+                && Program.ResolveCommand(["--show", "--enable"]) == "enable-show"
+                && Program.ResolveCommand([]) == "enable-show"
+                && Program.ResolveCommand(["--background"]) == "background"
+                && Program.ResolveCommand(["--prepare-install", "--show-errors"]) == "prepare-install"
+                && Program.ResolveCommand(["--prepare-uninstall"]) == "prepare-uninstall";
+            checks.Add(new { name = "setup and visible launch command routing", passed = routing }); ok &= routing;
+            string altered = Path.Combine(Path.GetTempPath(), "deadlock-sync-invalid-engine-" + Guid.NewGuid().ToString("N"));
+            bool rejected = false;
+            try
+            {
+                File.WriteAllText(altered, "Synthetic altered engine");
+                try { InstallPreparation.VerifyEngine(altered); }
+                catch (InvalidDataException) { rejected = true; }
+            }
+            finally { File.Delete(altered); }
+            checks.Add(new { name = "setup rejects an unverified engine", passed = rejected }); ok &= rejected;
             bool missingFile = SyncApplication.OptionalScheduledTask(() => throw new FileNotFoundException("Synthetic absent optional task")) is null;
             bool missingCom = SyncApplication.OptionalScheduledTask(() => throw new System.Runtime.InteropServices.COMException("Synthetic absent optional task", unchecked((int)0x80070002))) is null;
             bool deniedPropagated = false;

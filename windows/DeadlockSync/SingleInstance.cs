@@ -10,7 +10,7 @@ internal sealed class SingleInstance : IDisposable
     private readonly Mutex mutex;
     private readonly string pipeName;
     private readonly CancellationTokenSource cancellation = new();
-    public bool OwnsMutex { get; }
+    public bool OwnsMutex { get; private set; }
     public SingleInstance(string testRoot)
     {
         string user = WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
@@ -19,6 +19,14 @@ internal sealed class SingleInstance : IDisposable
         pipeName = "DeadlockSync-" + suffix;
         mutex = new Mutex(true, "Local\\" + pipeName, out bool first);
         OwnsMutex = first;
+    }
+
+    public bool WaitForOwnership(int timeoutMilliseconds)
+    {
+        if (OwnsMutex) return true;
+        try { OwnsMutex = mutex.WaitOne(timeoutMilliseconds); }
+        catch (AbandonedMutexException) { OwnsMutex = true; }
+        return OwnsMutex;
     }
 
     public async Task<string?> SendAsync(string command)

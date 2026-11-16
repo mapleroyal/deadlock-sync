@@ -31,7 +31,7 @@ internal sealed class SyncApplication : ApplicationContext
     private string saved = "";
     private string lastPhase = "";
     private string livePhase = "watching";
-    private const string IngestHash = "d0e2a772ffc075713cc21759cb0a3b9e378a3235e59fc25cc7ed5b5d1f884464";
+    internal const string IngestHash = "d0e2a772ffc075713cc21759cb0a3b9e378a3235e59fc25cc7ed5b5d1f884464";
     private const string GameIdentityWarning = "A game process was detected but its identity or access could not be verified. History recovery is paused; run Steam and the game normally, without elevation.";
 
     public SyncApplication(SingleInstance instance, string testRoot, string command)
@@ -61,7 +61,7 @@ internal sealed class SyncApplication : ApplicationContext
         timer.Start();
         dispatch.BeginInvoke(async () =>
         {
-            if (command is "enable" or "show") await ActionAsync(command);
+            if (command is "enable" or "show" or "enable-show") await ActionAsync(command);
             else await TickAsync();
         });
     }
@@ -110,11 +110,12 @@ internal sealed class SyncApplication : ApplicationContext
                 await StopWorkerAsync(true);
                 panel?.Hide();
             }
-            else if (command == "enable")
+            else if (command is "enable" or "enable-show")
             {
                 RecoveryPolicy.Enable(state, Now);
                 liveFailures = 0; liveNotBefore = 0; error = "";
                 Save();
+                if (command == "enable-show") ShowPanel();
             }
             else if (command == "show") ShowPanel();
             else if (command == "exit")
@@ -257,9 +258,11 @@ internal sealed class SyncApplication : ApplicationContext
         using (var stream = new FileStream(probe, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose)) { }
     }
 
-    private void CheckOtherIngest()
+    private void CheckOtherIngest() => CheckOtherIngest(worker?.Pid);
+
+    internal static void CheckOtherIngest(int? ownedWorkerPid)
     {
-        CheckRunningOtherIngest();
+        CheckRunningOtherIngest(ownedWorkerPid);
         using var run = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run");
         if (run is not null)
             foreach (string name in run.GetValueNames())
@@ -304,14 +307,16 @@ internal sealed class SyncApplication : ApplicationContext
         return false;
     }
 
-    private void CheckRunningOtherIngest()
+    private void CheckRunningOtherIngest() => CheckRunningOtherIngest(worker?.Pid);
+
+    internal static void CheckRunningOtherIngest(int? ownedWorkerPid)
     {
         int session = Process.GetCurrentProcess().SessionId;
         foreach (var process in Process.GetProcesses())
             using (process)
                 try
                 {
-                    if (process.Id != worker?.Pid && process.SessionId == session &&
+                    if (process.Id != ownedWorkerPid && process.SessionId == session &&
                         process.ProcessName.StartsWith("deadlock-api-ingest", StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException("Another Deadlock API Ingest process is running. Quit its own GUI/startup entry first; this app will not stop it.");
                 }
@@ -373,7 +378,7 @@ internal sealed class SyncApplication : ApplicationContext
 
     private string Snapshot() => JsonSerializer.Serialize(new
     {
-        running = true, version = "0.1.0", testMode = testRoot.Length > 0,
+        running = true, version = "0.1.1", testMode = testRoot.Length > 0,
         enabled = state.Enabled, phase = RecoveryPolicy.Phase(state, game, Now, worker?.Mode ?? ""),
         reason = state.Reason, pending = state.Pending, workerMode = worker?.Mode ?? "", workerPid = worker?.Pid,
         controllerPid = Environment.ProcessId, controllerMemoryBytes = Process.GetCurrentProcess().WorkingSet64,
