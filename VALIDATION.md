@@ -28,9 +28,11 @@ Native validation ran as a non-elevated interactive user in a Windows 11 x64 VM:
 - Installer first run, update, uninstall and reinstall preserved scheduling state;
   manual-only installation created no auto-start entry and started no worker.
 
-After warmup, with the panel hidden, actual process detection enabled and no
-worker running, a 60-second sample used 58.9 MiB working set, 17.5 MiB private
+Before the first live worker, with the panel hidden, actual process detection
+enabled and no worker running, a 60-second sample used 58.9 MiB working set, 17.5 MiB private
 memory and 234.375 ms CPU time (about 0.39% of one CPU core).
+After running the game/worker, the controller reached about 78.6 MiB working set.
+The observed live worker used about 15.4 MiB working set and 2.36 MiB private memory.
 These are observations on the test VM, not fixed
 resource limits. The self-contained executable is approximately 111 MiB on disk.
 
@@ -39,10 +41,12 @@ The published executable's SHA-256 is
 The release archive has a separate checksum in `SHA256SUMS.txt`.
 
 With the actual installed game, the controller detected the process and launched
-the verified upstream executable with exactly `--no-gc`. Upstream reported a
-completed memory scan without memory errors; no GC activity was logged. Normal
-game-window close stopped the live worker, and Quit/Exit preserved the existing
-cooldown. No online match was joined.
+the verified upstream executable with exactly `--no-gc`. After 60 seconds of game
+warmup, the loaded 3D start screen, game modules and 4.11 GiB game working set were
+confirmed. A fresh live worker completed a read-only memory pass in 4.4 seconds
+without errors; it found zero salts in that session and logged no GC activity.
+Normal game-window close stopped the live worker, and Quit/Exit preserved the
+existing cooldown. No online match was joined.
 
 A new played match appearing in Statlocker, a full history-recovery pass, logout/resume,
 Explorer restart and broader Windows/hardware combinations remain separate
