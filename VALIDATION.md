@@ -41,11 +41,23 @@ also holds the Screens Off journal lock during plugin writes and rejects active
 or incomplete display-power transactions; its lock/journal guards have isolated
 regression coverage.
 
-The host's live plugin remains 1.2.0 while Screens Off is active: reloading the
-shell or plugins would unload the display-power controller and may wake monitors.
-Source packaging and isolated validation do not claim live activation. The GPU
-gaming VM remains untouched for this release's checks. New-account real history
-completion and end-to-end Statlocker indexing remain separate acceptance checks.
+Live Omarchy activation completed on November 17 after Screens Off had fully
+exited, both displays were awake, the desktop was unlocked and Deadlock was closed.
+The maintained installer verified the new engine and reused the unchanged
+privileged memory helper; a fresh shell loaded plugin 1.3.0. The previous enabled
+intent was restored. Version-2 state retained the other account's exact Steam
+cooldown, removed the attributable legacy shared hold, and selected the current
+account with explicit worker arguments. The real selected-account pass reported
+77 Steam history entries and 30 missing salts, then accepted its first uploads.
+The bar exposed the current and working account with no service error. Private
+identities and logs remain local. The global cursor-invisible option stayed false.
+
+A browser check also found that Statlocker's Season 2 filter hid older history;
+All seasons showed 39 Standard matches. This is separate from the old controller's
+47-upload count, which belonged to another remembered account. Upstream's upload
+success means HTTP acceptance by Deadlock API, not confirmed Statlocker indexing.
+The GPU gaming VM remains untouched. Full recovery, new real-game preemption and
+end-to-end downstream indexing remain separate acceptance checks.
 
 The following sections retain earlier installer/gameplay acceptance, which is
 not evidence that the new account scheduler has completed live recovery.
