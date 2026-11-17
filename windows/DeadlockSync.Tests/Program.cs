@@ -605,13 +605,70 @@ Test("new current-account sign-in retries auth only once and retains hard limits
     state.Accounts["2"].Reason = "auth";
     AccountPolicy.ObserveAccounts(state, ["1", "2"], "2"); Equal("auth", state.Accounts["2"].Reason);
 });
-Test("blocked remaining history reports attention when current account is caught up", () =>
+Test("a different saved account needing sign-in leaves the current account caught up", () =>
 {
     SyncState state = new() { Enabled = true };
     AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
     state.Accounts["1"].Pending = false; state.Accounts["2"].Reason = "auth";
     var view = AccountPolicy.View(state, ["1", "2"], "", Now);
-    Equal("attention", view.Phase); Equal("2", view.AccountId); Equal("auth", view.Reason);
+    Equal("waiting_for_account", view.Phase); Equal("1", view.AccountId); Equal("", view.Reason);
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "");
+    Equal("choose_account", AccountPolicy.View(state, ["1", "2"], "", Now).Reason);
+    AccountPolicy.ObserveAccounts(state, ["1", "2", "3"], "1");
+    state.Accounts["1"].Pending = false; state.Accounts["3"].Reason = "unavailable";
+    view = AccountPolicy.View(state, ["1", "2", "3"], "", Now);
+    Equal("attention", view.Phase); Equal("3", view.AccountId); Equal("unavailable", view.Reason);
+});
+Test("equal account names retain their own status, deadline and previous pass", () =>
+{
+    SteamAccounts metadata = new([new("2", "Same"), new("1", "Same")], "1");
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, metadata.Ids, metadata.CurrentId);
+    state.Accounts["1"].Pending = false;
+    state.Accounts["1"].Progress = new() { Mode = "backfill", Phase = "complete", Uploaded = 0, History = 19 };
+    state.Accounts["2"].Reason = "auth";
+    state.Accounts["2"].Progress = Evidence("Steam logon failed: InvalidPassword").Progress;
+    state.Accounts["2"].NextAtUtc = Now + 100;
+    var rows = AccountPolicy.Rows(state, metadata, Now);
+    Equal(2, rows.Count); Equal("1", rows[0].Id); Check(rows[0].IsCurrent && !rows[1].IsCurrent);
+    Equal("caught_up", rows[0].Phase); Equal<int?>(0, rows[0].LastPass?.Uploaded);
+    Equal("choose_account", rows[1].Phase); Check(rows[1].LastPass is null && rows[1].NextAtUtc == 0);
+    state.Accounts["2"].Reason = "rate_limit"; state.Accounts["2"].HardUntilUtc = Now + 500;
+    rows = AccountPolicy.Rows(state, metadata, Now);
+    Equal("cooldown", rows[1].Phase); Equal(Now + 500, rows[1].NextAtUtc);
+});
+Test("only the actual worker row receives live progress", () =>
+{
+    SteamAccounts metadata = new([new("9", "Active"), new("4", "Current")], "4");
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, metadata.Ids, metadata.CurrentId);
+    state.Accounts["4"].Progress = new() { Mode = "backfill", Phase = "complete", History = 20 };
+    var active = Evidence("gc: account 9 has 60 match(es) in history, 3 missing salts").Progress;
+    var rows = AccountPolicy.Rows(state, metadata, Now, "backfill", "9", active);
+    Equal("4", rows[0].Id); Equal<int?>(20, rows[0].LastPass?.History); Check(rows[0].ActiveProgress is null);
+    Equal("working", rows[1].Phase); Equal<int?>(3, rows[1].ActiveProgress?.Total); Check(rows[1].LastPass is null);
+    var live = new RunEvidence("live").Progress;
+    rows = AccountPolicy.Rows(state, metadata, Now, "live", "", live);
+    Equal("live", rows[0].Phase); Equal("watching", rows[0].ActiveProgress?.Phase); Equal<int?>(20, rows[0].LastPass?.History);
+    Check(rows[1].ActiveProgress is null);
+    AccountPolicy.ObserveAccounts(state, metadata.Ids, "");
+    rows = AccountPolicy.Rows(state, new(metadata.Accounts, ""), Now, "live", "", live);
+    Check(rows.All(r => !r.IsCurrent && r.ActiveProgress is null));
+});
+Test("retry from the panel repairs only the selected login and preserves hard waits", () =>
+{
+    SyncState state = new() { Enabled = true, UploadHardUntilUtc = Now + 50 };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    state.Accounts["2"].Reason = state.Accounts["1"].Reason = "auth";
+    state.Accounts["2"].HardUntilUtc = Now + 500;
+    AccountPolicy.RetryCurrent(state, Now);
+    Equal("", state.Accounts["2"].Reason); Equal("auth", state.Accounts["1"].Reason);
+    Equal(Now + 500, state.Accounts["2"].NextAtUtc); Equal(Now + 50, state.UploadHardUntilUtc);
+    state.Reason = "state_store"; state.Accounts["1"].Reason = "state_store";
+    state.Accounts["2"].Reason = "state_store"; state.Accounts["2"].Corrupt = true;
+    AccountPolicy.RetryCurrent(state, Now);
+    Equal("", state.Reason); Equal("", state.Accounts["1"].Reason);
+    Equal("state_store", state.Accounts["2"].Reason);
 });
 Test("switching back to an interrupted account does not keep its crash reservation", () =>
 {

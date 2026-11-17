@@ -1,7 +1,7 @@
 # Deadlock Sync implementation guide
 
 Normal Windows users install the ready-to-use
-[0.2.0 setup executable](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.2.0/Deadlock-Sync-0.2.0-Setup.exe):
+[0.3.0 setup executable](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.3.0/Deadlock-Sync-0.3.0-Setup.exe):
 double-click, then Next, Install, Finish. They do not need a coding agent,
 terminal, SDK, separate .NET installation or administrator access.
 
@@ -181,8 +181,10 @@ Parse only output from the current owned invocation using UPSTREAM's markers.
 successes separately from failures; keep per-account batch progress separate or
 aggregate completed batches explicitly. A missing/truncated baseline cannot
 justify upload totals. Strip ANSI and bound line lengths and retained logs.
-Show the current Steam account and the account being recovered, with each
-account's wait/attention status. Use bounded persona labels as plain text;
+Show each Steam account once. Mark the current one when multiple accounts are
+known. Show progress on the working account's row and make each completed pass
+available through that row's disclosure. Right-clicking the tray icon offers
+**Download updates…** to open the public GitHub releases page. Use bounded persona labels as plain text;
 untrusted names must never become rich text or commands. Do not expose tokens,
 salts or raw logs in the panel.
 
@@ -194,7 +196,7 @@ overflow; explain how to pin it rather than changing Explorer's global settings.
 ## 6. Install cleanly and enroll Steam locally
 
 Ship a conventional native NSIS setup executable, named
-`Deadlock-Sync-0.2.0-Setup.exe`. The wizard is Next, Install, Finish, with **Start
+`Deadlock-Sync-0.3.0-Setup.exe`. The wizard is Next, Install, Finish, with **Start
 Deadlock Sync** checked on the Finish page. Release installation is not a
 PowerShell script or an agentic procedure. Run as the logged-in Steam user with
 `RequestExecutionLevel user`; do not request elevation. Target Windows 10 or
@@ -233,8 +235,8 @@ backup superseded by a marked complete payload; preserve ambiguous previous
 copies for diagnosis. Check shortcut, startup and uninstall registration writes,
 and retain an uninstall retry entry if owned files cannot be removed. Keep
 private state outside these directories. Release the setup
-gate **before** launching `--enable --show` at Finish so the tray and status
-window appear immediately. Cancelling before installation must not stop the
+gate before launching at Finish. Fresh installs use `--enable --show`. Upgrades
+with saved state use `--show` to preserve the syncing choice and account holds. Cancelling before installation must not stop the
 existing app. The build entry point is `tools/build-setup.py`; the required
 inputs, optional verified cached inputs and release packaging commands are in
 [windows/README.md](windows/README.md). Maintainers may use `/S`,

@@ -3,6 +3,9 @@ namespace DeadlockSync.Core;
 public sealed record AccountView(string Phase, string AccountId, string Reason, long NextAtUtc,
     ProgressSnapshot Progress, int Skipped);
 
+public sealed record AccountRowView(string Id, string Name, bool IsCurrent, string Phase, string Reason,
+    long NextAtUtc, int Skipped, ProgressSnapshot? ActiveProgress, ProgressSnapshot? LastPass);
+
 /// <summary>One selected account per worker; only upload-service restrictions are shared.</summary>
 public static class AccountPolicy
 {
@@ -42,6 +45,23 @@ public static class AccountPolicy
         foreach (var account in state.Accounts.Values)
             if (RecoveryPolicy.IsBlocked(account.Reason) && !account.Corrupt)
             { account.Reason = ""; account.Pending = true; account.NextAtUtc = Math.Max(now, account.HardUntilUtc); }
+    }
+
+    public static void RetryCurrent(SyncState state, long now)
+    {
+        bool retryStorage = state.Reason == "state_store";
+        bool retryService = state.Reason == "unavailable";
+        RecoveryPolicy.Enable(state, now);
+        if (state.Corrupt) return;
+        foreach (var (id, account) in state.Accounts)
+        {
+            bool retrySelected = id == state.CurrentAccountId && (account.Reason == "auth" ||
+                retryService && account.Reason == "unavailable");
+            if (account.Corrupt || !(retrySelected || retryStorage && account.Reason == "state_store")) continue;
+            account.Pending = true;
+            account.Reason = "";
+            account.NextAtUtc = Math.Max(now, Math.Max(account.HardUntilUtc, account.UploadHardUntilUtc));
+        }
     }
 
     public static GameTransition ObserveGame(SyncState state, string identity, long now)
@@ -132,6 +152,7 @@ public static class AccountPolicy
         if (id.Length == 0)
             id = Ordered(state, available).Where(x => state.Accounts[x].Pending && !RecoveryPolicy.IsBlocked(state.Accounts[x].Reason))
                 .OrderBy(x => RecoveryPolicy.Deadline(state.Accounts[x])).FirstOrDefault()
+                ?? Ordered(state, available).FirstOrDefault(x => state.Accounts[x].Pending && (x == state.CurrentAccountId || state.Accounts[x].Reason != "auth"))
                 ?? Ordered(state, available).FirstOrDefault(x => state.Accounts[x].Pending)
                 ?? Ordered(state, available).FirstOrDefault() ?? "";
         RecoveryState target = state.Accounts.GetValueOrDefault(id) ?? state;
@@ -145,10 +166,50 @@ public static class AccountPolicy
         else if (state.HardUntilUtc > now) { phase = "cooldown"; reason = "legacy_cooldown"; }
         else if (available.Count == 0) { phase = "attention"; reason = "no_accounts"; }
         else if (!available.Any(x => state.Accounts[x].Pending)) phase = "caught_up";
+        else if (target.Reason == "auth" && id != state.CurrentAccountId)
+        {
+            if (available.Contains(state.CurrentAccountId) && !state.Accounts[state.CurrentAccountId].Pending)
+            {
+                var current = state.Accounts[state.CurrentAccountId];
+                return new("waiting_for_account", state.CurrentAccountId, "", 0, current.Progress, current.Skipped);
+            }
+            phase = "attention";
+            reason = "choose_account";
+        }
         else if (RecoveryPolicy.IsBlocked(target.Reason)) phase = "attention";
         else if (target.HardUntilUtc > now) phase = "cooldown";
         else { phase = "retry"; if (state.SettlingUntilUtc > now || state.NextWorkerUtc > now) reason = "settling"; }
         if (state.Enabled && state.UploadHardUntilUtc > now) reason = "upload_rate_limit";
         return new(phase, id, reason, next, target.Progress, target.Skipped);
+    }
+
+    public static IReadOnlyList<AccountRowView> Rows(SyncState state, SteamAccounts accounts, long now,
+        string mode = "", string runningAccount = "", ProgressSnapshot? currentProgress = null)
+    {
+        var rows = new List<AccountRowView>(accounts.Accounts.Count);
+        foreach (var account in accounts.Accounts.OrderByDescending(a => a.Id == state.CurrentAccountId))
+        {
+            if (!state.Accounts.TryGetValue(account.Id, out var item)) continue;
+            bool current = account.Id == state.CurrentAccountId;
+            string phase;
+            if (mode == "backfill" && account.Id == runningAccount) phase = "working";
+            else if (item.Corrupt) phase = "attention";
+            else if (item.Reason == "auth") phase = current ? "auth" : "choose_account";
+            else if (RecoveryPolicy.IsBlocked(item.Reason)) phase = "attention";
+            else if (item.Pending && item.HardUntilUtc > now) phase = "cooldown";
+            else if (mode == "live" && current) phase = "live";
+            else phase = item.Pending ? "retry" : "caught_up";
+
+            long due = RecoveryPolicy.Deadline(item);
+            bool rowDeadline = phase is "cooldown" or "retry" && due > now && due != state.UploadHardUntilUtc;
+            var stored = item.Progress;
+            bool hasPass = stored.Mode == "backfill" && (stored.Completed.HasValue || stored.Total.HasValue ||
+                stored.Uploaded.HasValue || stored.Failed.HasValue || stored.History.HasValue ||
+                stored.Phase == "complete" && stored.UpdatedAtUtc > 0);
+            rows.Add(new(account.Id, account.Name, current, phase, item.Reason, rowDeadline ? due : 0, item.Skipped,
+                phase is "working" or "live" && currentProgress?.Mode == mode ? currentProgress : null,
+                phase != "working" && hasPass ? stored : null));
+        }
+        return rows;
     }
 }

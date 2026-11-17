@@ -1,6 +1,26 @@
 # Release validation
 
-Version 0.2.0, November 16, 2026. Current-account priority and separate recovery state.
+## Windows account panel 0.3.0
+
+The self-contained Windows x64 app and its NSIS installer were built locally.
+All 80 portable tests passed, including current-first status, equal display names
+with different account IDs, active-worker progress, older passes on the correct
+row and retrying one login while respecting other account holds. The Omarchy
+plugin bundled in this release passed 100 Python tests, the JavaScript model
+checks and its isolated QML panel checks.
+
+An interactive Windows 11 upgrade from the released 0.2.0 installer preserved
+the startup opt-out, manual pause, account sign-in hold, future deadline and
+last-pass counters. Finish opened the updated panel. Native UI checks used
+synthetic accounts and workers in a disposable, disconnected Windows desktop
+with an emulated display. The Windows tray panel was checked with two accounts,
+a long persona name and keyboard history disclosure. Explorer's notification
+area exposed **Download updates…** on right-click. A left-click opened or restored
+the minimized panel, and **Quit syncing** stopped work and hid the icon.
+After the final panel was
+opened and closed, its idle controller with no worker measured 84.5 MiB working
+set and 30.8 MiB private bytes in that session. The installed application SHA-256
+was `7a8a706b1e1ae8bfc21769b1afbc2071e3402e33752e20d21fba5a1142bf4d25`.
 
 ## Account-aware release 0.2.0
 

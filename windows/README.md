@@ -6,7 +6,7 @@ throttles it. The tray shows progress and the next planned attempt.
 
 ## Install
 
-1. Download [Deadlock-Sync-0.2.0-Setup.exe](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.2.0/Deadlock-Sync-0.2.0-Setup.exe).
+1. Download [Deadlock-Sync-0.3.0-Setup.exe](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.3.0/Deadlock-Sync-0.3.0-Setup.exe).
 2. Double-click it, then choose **Next → Install → Finish**. Leave **Start
    Deadlock Sync** checked on the last page.
 3. The app opens its status window and places a gamepad icon near the Windows
@@ -28,9 +28,11 @@ Sign in to Steam normally and let it remember your login; complete Steam Guard
 inside Steam if asked. “Remembered login” means Steam has saved a reusable login
 session on this Windows account. The bundled ingestion engine uses that session
 to recover match history while Deadlock is closed. Deadlock Sync has no password
-form and does not collect or store your password. If Steam has not saved a usable
-session, the app shows an attention message; sign in again in Steam, then choose
-**Enable syncing**. Live memory syncing can still work without that saved session.
+form and does not collect or store your password. If the current account needs a new saved session,
+complete any sign-in Steam asks for, then choose **Try again** in the status
+window. If another remembered account needs access,
+choose it in Steam when you want to recover its history. Live memory syncing can
+still work without that saved session.
 
 Recovery prioritizes the current Steam account, then works through other usable
 remembered accounts one at a time. Switching accounts updates that priority
@@ -40,8 +42,10 @@ run recovery on two computers for the same Steam account at once.
 
 ## Use
 
-Click the gamepad tray icon to open status and progress. Right-click for its
-menu. If the icon is in the hidden-icons area, drag it beside the clock to keep
+Click the gamepad tray icon to see one row per Steam account. With multiple
+accounts, **Current** marks the one selected in Steam. Backfill progress appears
+on the working row. Expand an account to see its last backfill and confirmed
+uploads. Right-click the tray icon for its menu. If the icon is in the hidden-icons area, drag it beside the clock to keep
 it visible.
 
 - **Enable syncing** resumes when policy permits; it never clears a cooldown.
@@ -67,11 +71,20 @@ matches and remote indexing delays mean complete Statlocker coverage cannot be
 guaranteed. Missing Steam sessions, private history and storage failures appear
 as attention states rather than repeated automatic retries.
 
-## Remove or update
+## Update
 
-Run the newer release's installer to update. It closes the running app safely,
-preserves your recovery records and startup choice, and starts the updated tray
-app when you click Finish with **Start Deadlock Sync** checked.
+1. Open the [latest release](https://github.com/mapleroyal/deadlock-sync/releases/latest)
+   and download the Windows file ending in **-Setup.exe**. Starting in version
+   0.3.0, you can reach that page by right-clicking the tray icon and choosing
+   **Download updates…**.
+2. Double-click the installer and choose **Next → Install → Finish**. Keep
+   **Start Deadlock Sync** checked to reopen the tray app.
+
+Install over your existing copy, using the same Windows user. Setup closes the
+old app and keeps your progress, cooldowns, match-attempt records and startup
+preference. If you had paused syncing, the updated status window lets you resume. Updates are installed manually.
+
+## Remove
 
 To remove it, open **Settings → Apps → Installed apps → Deadlock Sync →
 Uninstall**. On Windows 10, the page is called **Apps & features**. Follow the
@@ -106,7 +119,7 @@ From the repository root:
 dotnet run --project windows/DeadlockSync.Tests -c Release
 dotnet publish windows/DeadlockSync -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o publish/windows-x64
 python tools/build-setup.py --windows-publish publish/windows-x64 --dotnet-notices path/to/dotnet-notices --output dist
-python tools/package.py --version 0.2.0 --windows-installer dist/Deadlock-Sync-0.2.0-Setup.exe --output dist
+python tools/package.py --version 0.3.0 --windows-installer dist/Deadlock-Sync-0.3.0-Setup.exe --output dist
 ```
 
 `--dotnet-notices` names a directory containing the matching Microsoft .NET

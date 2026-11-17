@@ -2,7 +2,7 @@
 
 The base upstream source was verified at tag `v0.4.8` on 2026-11-16, commit
 `ef1882306163826809cb2768a39b4c4f8b258545` (released 2026-11-06).
-Deadlock Sync 0.2.0 uses the [selected-account engine extension](https://github.com/mapleroyal/deadlock-sync-engine),
+Deadlock Sync uses the [selected-account engine extension](https://github.com/mapleroyal/deadlock-sync-engine),
 based on that tag. Exact shipped binaries, source revision and hashes are pinned
 in `upstream.json` and `linux/omarchy/upstream.json`.
 
@@ -40,7 +40,7 @@ Sources: [release API](https://api.github.com/repos/deadlock-api/deadlock-api-in
 ## Commands and scope
 
 - Live worker: `deadlock-api-ingest.exe --no-gc`. Memory reading is ON by default; omit `--no-memory`. This worker initially scans Steam HTTP caches, keeps watching them, and reads the running game. It does not exit merely because the game closes: the custom supervisor must own its lifetime.
-- Own-history worker: `deadlock-api-ingest.exe --own-matches --account-id ID32` in Deadlock Sync 0.2.0. Separate one-shot process; **cannot** combine with `--no-gc`, `--once`, or a wrapped game command.
+- Own-history worker: `deadlock-api-ingest.exe --own-matches --account-id ID32` in Deadlock Sync. Separate one-shot process; **cannot** combine with `--no-gc`, `--once`, or a wrapped game command.
 - Backfill refuses to start with Deadlock running. It also checks while processing and aborts if Deadlock launches, but the supervisor should preempt promptly rather than wait for its next check.
 - `--own-matches` runs before the main watcher singleton lock is acquired. The supervisor must prevent concurrent backfills, and serialize live/backfill itself.
 - `--gui` is NOT a passive status reader: if no watcher is running it sets up autostart and starts a default no-argument watcher. `--install` and the setup executable open that GUI. Avoid all three in this custom app.

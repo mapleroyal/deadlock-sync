@@ -24,8 +24,8 @@ internal sealed class SyncApplication : ApplicationContext
     private readonly SemaphoreSlim gate = new(1, 1);
     private NativeWorker? worker;
     private RunEvidence? evidence;
-    private Form? panel;
-    private Label? details;
+    private StatusForm? panel;
+    internal static readonly string Version = typeof(SyncApplication).Assembly.GetName().Version!.ToString(3);
     private string game = "";
     private string error = "";
     private bool exiting;
@@ -53,13 +53,15 @@ internal sealed class SyncApplication : ApplicationContext
         _ = dispatch.Handle;
         image = TrayIcon();
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Status and progress", null, (_, _) => ShowPanel());
+        menu.Items.Add("Status and progress", null, (_, _) => ShowPanel(true));
         menu.Items.Add("Enable syncing", null, async (_, _) => await ActionAsync("enable"));
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit syncing", null, async (_, _) => await ActionAsync("quit"));
         menu.Items.Add("Exit app", null, async (_, _) => await ActionAsync("exit"));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Download updates…", null, (_, _) => OpenUpdates());
         icon = new NotifyIcon { Icon = image, Text = "Deadlock Sync", ContextMenuStrip = menu, Visible = state.Enabled };
-        icon.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowPanel(); };
+        icon.MouseClick += (_, e) => { if (e.Button == MouseButtons.Left) ShowPanel(true); };
         icon.BalloonTipClicked += (_, _) => ShowPanel();
         timer = new System.Windows.Forms.Timer { Interval = 2000 };
         timer.Tick += async (_, _) => await TickAsync();
@@ -115,7 +117,7 @@ internal sealed class SyncApplication : ApplicationContext
                 RecoveryPolicy.Quit(state, game);
                 Save(); // Disabled intent is durable before terminating workers.
                 await StopWorkerAsync(true);
-                panel?.Hide();
+                panel?.Close();
             }
             else if (command is "enable" or "enable-show")
             {
@@ -125,7 +127,17 @@ internal sealed class SyncApplication : ApplicationContext
                 Save();
                 if (command == "enable-show") ShowPanel();
             }
-            else if (command == "show") ShowPanel();
+            else if (command == "retry")
+            {
+                RefreshAccounts();
+                if (accountError.Length == 0)
+                {
+                    AccountPolicy.RetryCurrent(state, Now);
+                    liveFailures = 0; liveNotBefore = 0; error = "";
+                    Save();
+                }
+            }
+            else if (command == "show") { RefreshAccounts(); ShowPanel(); }
             else if (command == "exit")
             {
                 exiting = true; timer.Stop();
@@ -172,7 +184,7 @@ internal sealed class SyncApplication : ApplicationContext
             if (worker is { Mode: "live" } && evidence?.EndpointAccessDenied == true)
             {
                 state.Reason = "unavailable"; state.Pending = true; liveFailures = 3;
-                error = "The upload service denied access. Check the service status and app version, then choose Enable syncing to retry.";
+                error = "The upload service denied access. Check the service status and app version, then try again.";
                 Save(); await StopWorkerAsync(true);
             }
             if (worker is { Mode: "backfill" } && evidence is not null && (evidence.StorageFailure || evidence.RateLimited))
@@ -389,7 +401,7 @@ internal sealed class SyncApplication : ApplicationContext
         {
             liveFailures++;
             liveNotBefore = Now + Math.Min(300, 10 * (1 << Math.Min(liveFailures, 5)));
-            error = "Live worker stopped. " + (liveFailures >= 3 ? "Choose Enable syncing to retry after checking Steam/game permissions." : "Retrying shortly.");
+            error = "Live worker stopped. " + (liveFailures >= 3 ? "Check Steam and game permissions, then try again." : "Retrying shortly.");
         }
         Save(); // Consume completion durably before releasing the worker and its final evidence.
         worker.Dispose(); worker = null; evidence = null; workerAccount = "";
@@ -417,7 +429,7 @@ internal sealed class SyncApplication : ApplicationContext
         var view = CurrentView();
         return JsonSerializer.Serialize(new
         {
-            running = true, version = "0.2.0", testMode = testRoot.Length > 0,
+            running = true, version = Version, testMode = testRoot.Length > 0,
             enabled = state.Enabled, phase = accountError.Length != 0 && game.Length == 0 ? "attention" : view.Phase,
             reason = view.Reason, pending = accounts.Ids.Any(x => state.Accounts[x].Pending),
             workerMode = worker?.Mode ?? "", workerPid = worker?.Pid, workerAccountId = workerAccount,
@@ -445,34 +457,22 @@ internal sealed class SyncApplication : ApplicationContext
             "cooldown" => view.Reason == "upload_rate_limit" ? "Waiting for upload service cooldown"
                 : view.Reason == "legacy_cooldown" ? "Waiting for earlier recovery cooldown" : "Waiting for Steam cooldown",
             "attention" => "History recovery needs attention",
+            "waiting_for_account" => "Another account is waiting for selection in Steam",
             "caught_up" => "Available history processed",
             "retry" => view.Reason == "settling" ? "Waiting before history recovery" : "Waiting to retry history recovery",
             _ => "Syncing stopped"
         };
         icon.Text = ("Deadlock Sync — " + title)[..Math.Min(63, ("Deadlock Sync — " + title).Length)];
-        if (details is not null)
+        if (panel is { Visible: true })
         {
-            var p = evidence?.Progress ?? view.Progress;
-            string next = view.NextAtUtc > Now
-                ? DateTimeOffset.FromUnixTimeSeconds(view.NextAtUtc).ToLocalTime().ToString("f") : "When eligible";
-            if (worker?.Mode == "backfill") next = "Running now";
-            else if (game.Length > 0) next = view.NextAtUtc > Now
-                ? "After game exit, no earlier than " + next : "After game exit and a short settling delay";
-            details.Text = title + "\n\n" +
-                $"Current Steam account: {(accountError.Length == 0 ? accounts.Label(state.CurrentAccountId) : "Unavailable")}\n" +
-                $"History account: {accounts.Label(view.AccountId)}\n\n" +
-                $"Processed: {Count(p.Completed)} / {Count(p.Total)} missing matches\n" +
-                $"Confirmed uploads this pass: {Count(p.Uploaded)}\nFailed this pass: {Count(p.Failed)}\n" +
-                $"Unavailable older matches: {view.Skipped}\n" +
-                $"Last update: {(p.UpdatedAtUtc is long stamp ? DateTimeOffset.FromUnixTimeSeconds(stamp).ToLocalTime().ToString("g") : "Waiting for activity")}\n" +
-                $"Next history attempt: {(view.Phase != "caught_up" ? next : "After your next game or account change")}\n" +
-                $"Reason: {Reason(view.Reason)}\n\n" +
-                AccountSummary() + "\n" +
-                (accountError.Length > 0 ? accountError + "\n\n" : "") +
-                (error.Length > 0 ? error + "\n\n" : "") +
-                "Live gameplay takes priority. The current eligible Steam account goes first; other accounts continue while it waits.\n" +
-                "Quit syncing hides the icon and retains a small next-game watcher. Exit app stops everything.\n\n" +
-                $"Controller memory: {Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024} MB";
+            var rows = AccountPolicy.Rows(state, accountError.Length == 0 ? accounts : SteamAccounts.Empty,
+                Now, worker?.Mode ?? "", workerAccount, evidence?.Progress);
+            var standalone = rows.Any(a => a.ActiveProgress is not null) ? null : evidence?.Progress;
+            string message = PanelMessage(view, rows);
+            bool canRetry = state.Enabled && !state.Corrupt && accountError.Length == 0 &&
+                (state.Reason is "state_store" or "unavailable" || liveFailures >= 3 ||
+                 rows.Any(row => row.IsCurrent && row.Phase == "auth"));
+            panel.UpdateStatus(rows, message, standalone, state.Enabled, canRetry);
         }
         string noticePhase = state.UploadHardUntilUtc > Now ? "cooldown" : phase;
         string noticeKey = noticePhase + ":" + view.AccountId + ":" + view.NextAtUtc + ":" + state.UploadHardUntilUtc;
@@ -485,58 +485,49 @@ internal sealed class SyncApplication : ApplicationContext
         lastPhase = noticePhase;
     }
 
-    private static string Count(int? count) => count?.ToString("N0") ?? "Unknown";
-    private string AccountSummary()
+    private string PanelMessage(AccountView view, IReadOnlyList<AccountRowView> rows)
     {
-        var lines = accounts.Accounts.OrderBy(a => a.Id == state.CurrentAccountId ? 0 : 1).Take(10).Select(a =>
-        {
-            var item = state.Accounts[a.Id];
-            string status = a.Id == workerAccount ? "Recovering now" : !item.Pending ? "Caught up"
-                : RecoveryPolicy.IsBlocked(item.Reason) ? Reason(item.Reason)
-                : RecoveryPolicy.Deadline(item) > Now ? "Next attempt " + DateTimeOffset.FromUnixTimeSeconds(RecoveryPolicy.Deadline(item)).ToLocalTime().ToString("g")
-                : "Waiting for its turn";
-            return a.Name + (a.Id == state.CurrentAccountId ? " (current)" : "") + ": " + status;
-        });
-        return string.Join("\n", lines) + (accounts.Accounts.Count > 10 ? "\nMore remembered accounts are queued." : "") + "\n";
+        if (error.Length != 0) return error;
+        if (accountError.Length != 0) return accountError;
+        if (!state.Enabled) return "Syncing is paused.";
+        if (state.Corrupt || state.Reason == "state_store") return "Check access to the saved recovery data.";
+        if (state.Reason == "unavailable") return "The installation or upload service needs attention.";
+        if (state.UploadHardUntilUtc > Now)
+            return "The upload service paused all uploads. Next attempt " + StatusForm.LocalTime(state.UploadHardUntilUtc);
+        if (game.Length == 0 && state.HardUntilUtc > Now)
+            return "Recovery is waiting for an earlier cooldown. Next attempt " + StatusForm.LocalTime(state.HardUntilUtc);
+        if (rows.Count == 0 && worker?.Mode != "live") return "Choose a remembered account in Steam to recover its match history.";
+        if (view.Phase == "game" && worker is null) return "Waiting for live sync to start.";
+        if (view.Phase == "retry" && view.Reason == "settling" && view.NextAtUtc > Now &&
+            !rows.Any(row => row.NextAtUtc == view.NextAtUtc))
+            return "Next history check " + StatusForm.LocalTime(view.NextAtUtc);
+        return "";
     }
-    private static string Reason(string reason) => reason switch
-    {
-        "rate_limit" => "Steam throttled requests; the scheduled retry is not a guaranteed reset time.",
-        "upload_rate_limit" => "The upload service throttled requests; both live uploads and history recovery are waiting.",
-        "legacy_cooldown" => "An earlier cooldown had no reliable account identity. Its original deadline is being preserved once; new Steam limits are tracked per account.",
-        "no_accounts" => "Sign in to Steam with remembered login. Account changes are detected automatically.",
-        "transient" => "Temporary connection or service failure.",
-        "account_in_use" => "Steam account is busy playing a game.",
-        "auth" => "Sign in to Steam with remembered login, finish Steam Guard, then choose Enable syncing.",
-        "state_store" => "Local recovery or attempt storage needs repair. Existing records are preserved.",
-        "unavailable" => "History permission or installation needs attention.",
-        "settling" => "A short delay lets the game and Steam finish closing.",
-        _ => "None"
-    };
 
-    private void ShowPanel()
+    private void ShowPanel(bool byTray = false)
     {
         if (panel is null || panel.IsDisposed)
         {
-            panel = new Form { Text = "Deadlock Sync", ClientSize = new Size(570, 510), MinimumSize = new Size(500, 440),
-                StartPosition = FormStartPosition.CenterScreen, ShowInTaskbar = true, Font = new Font("Segoe UI", 10) };
-            var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
-            details = new Label { Dock = DockStyle.Top, Padding = new Padding(18), AutoSize = true,
-                MaximumSize = new Size(panel.ClientSize.Width - 22, 0) };
-            scroll.Controls.Add(details);
-            scroll.Resize += (_, _) => details.MaximumSize = new Size(Math.Max(200, scroll.ClientSize.Width - 22), 0);
-            var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 48, Padding = new Padding(10), FlowDirection = FlowDirection.RightToLeft };
-            var close = new Button { Text = "Close", AutoSize = true };
-            close.Click += (_, _) => panel.Hide();
-            var enable = new Button { Text = "Enable syncing", AutoSize = true };
-            enable.Click += async (_, _) => await ActionAsync("enable");
-            var quit = new Button { Text = "Quit syncing", AutoSize = true };
-            quit.Click += async (_, _) => await ActionAsync("quit");
-            buttons.Controls.AddRange([close, enable, quit]);
-            panel.Controls.Add(scroll); panel.Controls.Add(buttons);
-            panel.FormClosing += (_, e) => { if (!exiting) { e.Cancel = true; panel.Hide(); } };
+            panel = new StatusForm(Version, image, ActionAsync);
+            panel.FormClosed += (_, _) => panel = null;
         }
-        Render(); panel.Show(); panel.Activate();
+        bool wasVisible = panel.Visible && panel.WindowState != FormWindowState.Minimized;
+        if (panel.WindowState == FormWindowState.Minimized) panel.WindowState = FormWindowState.Normal;
+        panel.Show();
+        Render();
+        if (byTray && !wasVisible) panel.PositionByTray();
+        panel.Activate();
+    }
+
+    private static void OpenUpdates()
+    {
+        const string url = "https://github.com/mapleroyal/deadlock-sync/releases/latest";
+        try { using var browser = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            MessageBox.Show("Open this release page in your browser to download the latest Windows installer.\n\n" + url,
+                "Deadlock Sync updates", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
     }
 
     private static Icon TrayIcon()

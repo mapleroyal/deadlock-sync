@@ -2,7 +2,7 @@
 
 For installation, read README.md and the relevant platform README, then use the
 release installer. On Windows, the normal user path is the conventional
-`Deadlock-Sync-0.2.0-Setup.exe` wizard: Next, Install, Finish. Do not substitute
+`Deadlock-Sync-0.3.0-Setup.exe` wizard: Next, Install, Finish. Do not substitute
 PowerShell scripts, a source build or an agentic setup flow. It bundles the app,
 runtime and verified ingest engine, runs per user without elevation, and opens
 the enabled tray app at Finish. Fresh installs default to starting at login;

@@ -55,7 +55,7 @@ Var HadApp
 Page custom OptionsCreate OptionsLeave
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_TITLE "Deadlock Sync is installed"
-!define MUI_FINISHPAGE_TEXT "Click Finish to start syncing.$\r$\n$\r$\nLook for the gamepad near the Windows clock. It may be inside the hidden-icons arrow. Click it for progress; right-click it to stop syncing."
+!define MUI_FINISHPAGE_TEXT "Click Finish to open Deadlock Sync.$\r$\n$\r$\nLook for the gamepad near the Windows clock while syncing is enabled. Click it for account status and progress."
 !define MUI_FINISHPAGE_RUN
 !define MUI_FINISHPAGE_RUN_TEXT "Start Deadlock Sync"
 !define MUI_FINISHPAGE_RUN_FUNCTION LaunchSync
@@ -161,7 +161,13 @@ Function LaunchSync
   SetOutPath "$INSTDIR\app"
   Call ReleaseGate
   ClearErrors
-  Exec '$\"$INSTDIR\app\DeadlockSync.exe$\" --enable --show'
+  ${If} $HadApp == 1
+  ${AndIf} ${FileExists} "$INSTDIR\state\recovery.json"
+    ; Opening after an update must not count as an explicit retry for every account.
+    Exec '$\"$INSTDIR\app\DeadlockSync.exe$\" --show'
+  ${Else}
+    Exec '$\"$INSTDIR\app\DeadlockSync.exe$\" --enable --show'
+  ${EndIf}
   ${If} ${Errors}
     MessageBox MB_ICONEXCLAMATION "Installation is complete. Open Deadlock Sync from the Start menu to begin." /SD IDOK
   ${EndIf}
@@ -276,6 +282,7 @@ Section "Install"
   WriteRegStr HKCU "${PRODUCT_KEY}" "DisplayIcon" "$INSTDIR\app\DeadlockSync.exe"
   WriteRegStr HKCU "${PRODUCT_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU "${PRODUCT_KEY}" "URLInfoAbout" "https://github.com/mapleroyal/deadlock-sync"
+  WriteRegStr HKCU "${PRODUCT_KEY}" "URLUpdateInfo" "https://github.com/mapleroyal/deadlock-sync/releases/latest"
   WriteRegStr HKCU "${PRODUCT_KEY}" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
   WriteRegStr HKCU "${PRODUCT_KEY}" "QuietUninstallString" '$\"$INSTDIR\Uninstall.exe$\" /S'
   WriteRegDWORD HKCU "${PRODUCT_KEY}" "NoModify" 1
