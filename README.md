@@ -28,6 +28,8 @@ package requires Omarchy; it is not a generic GNOME/KDE tray application.
 - While Deadlock runs, the reader uses `--no-gc` with memory reading enabled.
 - Gameplay preempts history recovery. After game exit, eligible recovery resumes
   following a short settling delay.
+- History recovery starts with each account's newest history page and works
+  backward, preserving Steam's order within each page.
 - Throttled recovery stops its worker and waits, normally 24 hours plus a small
   jitter. The icon stays visible with progress and the next attempt time.
 - Temporary failures back off. Authentication, access or storage problems need
@@ -41,6 +43,11 @@ does not ask for your password. Recovery includes all decryptable remembered
 accounts, so review saved accounts on shared computers. Enable only one recovery
 owner for an account across computers or a Linux host/Windows VM pair. Do not
 also run upstream's default GUI watcher.
+
+After switching Steam accounts, launching Deadlock again starts live syncing
+for that game session. Each history pass rereads the usable remembered accounts;
+an account switch alone does not interrupt a pass or trigger a new one while
+idle. Accounts are processed separately, and existing cooldowns still apply.
 
 Accepted uploads and matches visible in Statlocker are different milestones.
 Remote indexing can lag, and old unavailable data means complete historical

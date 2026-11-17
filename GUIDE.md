@@ -81,6 +81,9 @@ does not stop a console worker. Never claim that a terminal was opened.
    In-game Exit, Alt+F4 and a crash are all process exits.
 4. Run one eligible recovery pass. A successful pass becomes **Caught up** and
    waits for subsequent gameplay before another automatic history check.
+   Preserve upstream's newest-history-page-first order for each account, including
+   after filtering known or exhausted matches. See UPSTREAM for the within-page
+   and cross-account limits; do not claim an explicit timestamp sort.
 5. Steam cooldown or a backfill authentication problem does not prevent live
    memory ingestion. Do not use the game-priority rule to bypass a server's
    explicit restriction on the upload endpoint itself.
