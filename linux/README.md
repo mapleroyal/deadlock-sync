@@ -36,8 +36,12 @@ time you choose the affected account in Steam, recovery retries automatically
 once the game is closed and its cooldown has passed. Follow any sign-in prompt
 Steam shows for that account.
 
-Click the gamepad icon for activity, counts and the next retry time. Right-click
-**Quit syncing** to stop both jobs, disable recovery and hide the icon. A new
+Click the gamepad icon to see one row per Steam account. A single **Current**
+marker identifies the account selected in Steam. Progress appears automatically
+on the row doing a backfill. Expand a row to see its previous pass when details
+are available.
+
+Right-click the icon and choose **Quit syncing** to stop both jobs, disable recovery and hide the icon. A new
 game session or the launcher enables it again. Enabled recovery keeps the icon
 visible after game exit, including during cooldown and caught-up states.
 

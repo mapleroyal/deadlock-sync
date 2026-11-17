@@ -1,5 +1,5 @@
 import QtQuick
-import Quickshell
+import QtQuick.Layouts
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -13,35 +13,143 @@ Panel {
   readonly property var status: service ? service.status : Model.empty()
   readonly property var progress: Model.progress(status.progress)
   readonly property var recovery: Model.recovery(status.recovery)
+  readonly property var accounts: recovery.accounts
+  readonly property bool live: Model.running(status.live)
+  readonly property bool backfill: Model.running(status.backfill)
+  readonly property bool working: live || backfill
   readonly property bool lastPass: !working && recovery.enabled && progress.mode === "backfill"
-  readonly property bool hasProgress: (working || lastPass) && progress.mode !== ""
-  readonly property bool progressKnown: hasProgress && Model.progressKnown(progress)
+  readonly property bool progressKnown: (backfill || lastPass) && Model.progressKnown(progress)
   readonly property bool hasGame: !!service && service.hasGame
   readonly property bool liveFailure: hasGame && status.live === "failed" && recovery.reason !== "upload_rate_limit"
-  readonly property bool working: Model.running(status.live) || Model.running(status.backfill)
   readonly property bool busy: !!service && service.commandBusy
   readonly property string errorText: service ? service.actionError : ""
   readonly property string stateKey: Model.statusKey(status, hasGame, busy, errorText)
-  readonly property bool attention: stateKey === "state.failed" || stateKey === "state.error" ||
-    stateKey === "state.recovery.attention"
+  readonly property bool attention: ["state.failed", "state.error", "state.recovery.attention"].indexOf(stateKey) >= 0
   readonly property bool managing: working || recovery.enabled
   readonly property bool shown: managing || busy
-  readonly property string detailKey: liveFailure ? "detail.live_failed" : (Model.running(status.backfill) ? "detail.backfill" :
-    (Model.running(status.live) ? "detail.live" : (recovery.enabled ?
-      (["caught_up", "waiting_for_account", "game"].indexOf(recovery.phase) >= 0 ? "detail." + recovery.phase :
-        (recovery.repair_required ? "detail.recovery.corrupt" : "detail.recovery." + recovery.reason)) :
-      (status.paused && hasGame ? "detail.paused" : "detail.idle"))))
+  readonly property bool sharedCooldown: ["upload_rate_limit", "legacy_cooldown"].indexOf(recovery.reason) >= 0
+  readonly property bool hasWorkingRow: backfill && accounts.some(a => a.phase === "working")
+  readonly property bool hasLiveRow: live && accounts.some(a => a.current && ["caught_up", "retry"].indexOf(a.phase) >= 0)
+  readonly property color ink: Commons.Color.popups.text
+  readonly property color muted: Util.alpha(ink, 0.76)
   readonly property real openPanelIndicatorWidth: button.opticalSize
+  property string expandedAccount: ""
   visible: shown
   implicitWidth: shown ? button.implicitWidth : 0
   implicitHeight: shown ? button.implicitHeight : 0
   onShownChanged: if (!shown) Qt.callLater(function() { if (!root.shown) root.close(); })
+  onOpenedChanged: if (!opened) { expandedAccount = ""; scroll.contentY = 0; }
 
   Commons.Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
 
   function activate() {
-    if (!service || busy) return;
-    service.activate(managing ? "pause" : "enable");
+    if (service && !busy) service.activate(managing ? "pause" : "enable");
+  }
+
+  function timestamp(seconds) {
+    return Qt.formatDateTime(new Date(seconds * 1000), Qt.locale(Commons.I18n.formatLocale), Locale.ShortFormat);
+  }
+
+  function rowDeadline(account) {
+    return ["retry", "cooldown"].indexOf(account.phase) >= 0 && account.next_at > Date.now() / 1000;
+  }
+
+  // Ordinary activity belongs to the account row. Use a panel-wide message
+  // for shared constraints, errors requiring instructions, or a missing row.
+  readonly property string detailKey: {
+    if (errorText) return "";
+    if (liveFailure) return "detail.live_failed";
+    if (sharedCooldown || recovery.reason === "account_metadata") return "detail.recovery." + recovery.reason;
+    if (working) return "";
+    if (recovery.repair_required) return "detail.recovery.corrupt";
+    if (recovery.reason === "choose_account" && accounts.some(a => a.phase === "choose_account")) return "";
+    if (recovery.reason === "auth" && accounts.some(a => a.phase === "auth")) return "";
+    if (recovery.reason === "rate_limit" && accounts.some(a => a.phase === "cooldown")) return "";
+    if (recovery.reason) return "detail.recovery." + recovery.reason;
+    if (hasGame || accounts.length === 0) return stateKey;
+    return "";
+  }
+  readonly property bool showNextAttempt: Model.scheduledAttempt(recovery, Date.now() / 1000) &&
+    (sharedCooldown || !accounts.some(a => root.rowDeadline(a) && a.next_at === recovery.next_at))
+
+  component Label: Text {
+    textFormat: Text.PlainText
+    font.family: Style.font.family
+    font.pixelSize: Style.font.bodySmall
+    color: root.ink
+    wrapMode: Text.Wrap
+  }
+
+  component Stat: Label {
+    font.pixelSize: Style.font.caption
+    color: root.muted
+  }
+
+  component PassDetails: Column {
+    id: pass
+    required property var dataPoint
+    property bool historical: false
+    property bool showPhase: true
+    readonly property bool known: Model.progressKnown(dataPoint)
+    spacing: Style.space(4)
+
+    Label {
+      objectName: "deadlock-sync-phase"
+      width: parent.width
+      visible: pass.showPhase
+      text: strings.t(pass.historical ? "progress.lastPass" : "phase." + pass.dataPoint.phase)
+      font.bold: pass.historical
+    }
+    Label {
+      objectName: "deadlock-sync-progress-count"
+      visible: pass.known
+      width: parent.width
+      text: strings.tn("progress.processed", pass.dataPoint.total || 0)
+        .arg(Commons.I18n.formatNumber(pass.dataPoint.completed || 0)).arg(Commons.I18n.formatNumber(pass.dataPoint.total || 0))
+      color: root.muted
+    }
+    Rectangle {
+      objectName: "deadlock-sync-progress-bar"
+      visible: pass.known && !pass.historical
+      width: parent.width
+      height: Style.space(4)
+      radius: height / 2
+      color: Util.alpha(root.ink, 0.16)
+      Rectangle {
+        width: parent.width * Model.progressRatio(pass.dataPoint)
+        height: parent.height
+        radius: parent.radius
+        color: Commons.Color.accent
+      }
+    }
+    Flow {
+      width: parent.width
+      spacing: Style.space(10)
+      visible: pass.dataPoint.uploaded !== null || pass.dataPoint.failed > 0 || pass.dataPoint.history !== null
+
+      Stat {
+        objectName: "deadlock-sync-uploaded"
+        visible: pass.dataPoint.uploaded !== null
+        text: strings.t("progress.uploaded").arg(Commons.I18n.formatNumber(pass.dataPoint.uploaded || 0))
+      }
+      Stat {
+        visible: pass.dataPoint.failed > 0
+        text: strings.t("progress.failed").arg(Commons.I18n.formatNumber(pass.dataPoint.failed || 0))
+        color: Commons.Color.urgent
+      }
+      Stat {
+        visible: pass.dataPoint.history !== null
+        text: strings.t("progress.history").arg(Commons.I18n.formatNumber(pass.dataPoint.history || 0))
+      }
+    }
+    Label {
+      objectName: "deadlock-sync-last-activity"
+      visible: pass.dataPoint.updated_at !== null
+      width: parent.width
+      text: strings.t("progress.updated").arg(root.timestamp(pass.dataPoint.updated_at || 0))
+      font.pixelSize: Style.font.caption
+      color: root.muted
+    }
   }
 
   BarIconButton {
@@ -68,265 +176,230 @@ Panel {
     owner: root
     bar: root.bar
     open: root.opened
-    focusTarget: keyCatcher
-    contentWidth: popup.fittedContentWidth(Style.space(310))
-    contentHeight: popup.fittedContentHeight(content.implicitHeight, Style.space(640))
+    focusTarget: keys
+    contentWidth: popup.fittedContentWidth(Style.space(370))
+    contentHeight: popup.fittedContentHeight(content.implicitHeight, Style.space(630))
 
-    PanelKeyCatcher {
-      id: keyCatcher
+    Item {
+      id: keys
       anchors.fill: parent
-      onCloseRequested: root.close()
-      onActivateRequested: root.activate()
+      focus: true
+      Keys.onEscapePressed: root.close()
+      Keys.onDownPressed: scroll.contentY = Math.min(Math.max(0, scroll.contentHeight - scroll.height), scroll.contentY + Style.space(44))
+      Keys.onUpPressed: scroll.contentY = Math.max(0, scroll.contentY - Style.space(44))
+      Keys.onReturnPressed: root.activate()
+      Keys.onEnterPressed: root.activate()
+      Keys.onSpacePressed: root.activate()
 
       Flickable {
+        id: scroll
         anchors.fill: parent
         contentHeight: content.implicitHeight
+        interactive: contentHeight > height
         clip: true
         boundsBehavior: Flickable.StopAtBounds
-      Column {
-        id: content
-        width: parent.width
-        spacing: Style.space(10)
-        Text {
-          width: parent.width
-          text: strings.t("name")
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.body
-          font.bold: true
-          color: Commons.Color.popups.text
+
+        function reveal(item) {
+          if (!interactive) return;
+          var top = item.mapToItem(content, 0, 0).y;
+          contentY = Math.max(0, Math.min(top, Math.max(contentY, top + item.height - height)));
         }
-        Text {
-          width: parent.width
-          text: strings.t(root.stateKey)
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          color: root.attention ? Commons.Color.urgent : Commons.Color.popups.text
-          wrapMode: Text.WordWrap
-        }
-        Text {
-          objectName: "deadlock-sync-current-account"
-          visible: root.recovery.current_account !== ""
-          width: parent.width
-          text: strings.t("account.current").arg(root.recovery.current_account)
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          color: Commons.Color.popups.text
-          wrapMode: Text.WordWrap
-          maximumLineCount: 2
-          elide: Text.ElideRight
-        }
-        Text {
-          objectName: "deadlock-sync-active-account"
-          visible: root.recovery.active_account !== ""
-          width: parent.width
-          text: strings.t("account.working").arg(root.recovery.active_account)
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          color: Commons.Color.popups.text
-          wrapMode: Text.WordWrap
-          maximumLineCount: 2
-          elide: Text.ElideRight
-        }
-        Flickable {
-          objectName: "deadlock-sync-account-list"
-          visible: root.recovery.accounts.length > 1 || (root.recovery.accounts.length === 1 && !root.recovery.current_account)
-          width: parent.width
-          height: visible ? Math.min(accountRows.implicitHeight, Style.space(100)) : 0
-          contentHeight: accountRows.implicitHeight
-          clip: true
-          boundsBehavior: Flickable.StopAtBounds
-          Column {
-            id: accountRows
+
+        Column {
+          id: content
+          width: scroll.width
+          spacing: Style.space(12)
+
+          Label {
             width: parent.width
-            spacing: Style.space(4)
+            text: strings.t("name")
+            font.pixelSize: Style.font.title
+            font.bold: true
+          }
+          Label {
+            objectName: "deadlock-sync-detail"
+            visible: text !== ""
+            width: parent.width
+            text: root.errorText || (root.detailKey ? strings.t(root.detailKey) : "")
+            color: root.attention ? Commons.Color.urgent : root.muted
+          }
+          Label {
+            objectName: "deadlock-sync-next-attempt"
+            visible: root.showNextAttempt
+            width: parent.width
+            text: strings.t("recovery.nextAttempt").arg(root.timestamp(root.recovery.next_at || 0))
+          }
+          Loader {
+            width: parent.width
+            active: (root.live && !root.hasLiveRow) || (root.backfill && !root.hasWorkingRow) || (root.lastPass && root.accounts.length === 0)
+            visible: active
+            sourceComponent: PassDetails {
+              dataPoint: root.progress.mode ? root.progress : Model.progress({mode: root.live ? "live" : "backfill"})
+              historical: root.lastPass
+            }
+          }
+          Column {
+            id: accountList
+            objectName: "deadlock-sync-account-list"
+            visible: root.accounts.length > 0
+            width: parent.width
+            spacing: Style.space(10)
+
             Repeater {
-              model: root.recovery.accounts
-              delegate: Text {
-                required property var modelData
-                width: accountRows.width
-                text: modelData.name + (modelData.current ? " (" + strings.t("account.currentTag") + ")" : "") +
-                  ": " + strings.t("account.phase." + modelData.phase) +
-                  ((modelData.next_at || 0) > Math.floor(Date.now() / 1000) && ["cooldown", "retry"].indexOf(modelData.phase) >= 0 ?
-                    " — " + Qt.formatDateTime(new Date(modelData.next_at * 1000), Qt.locale(Commons.I18n.formatLocale), Locale.ShortFormat) : "")
-                textFormat: Text.PlainText
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-                color: Util.alpha(Commons.Color.popups.text, 0.75)
-                wrapMode: Text.WordWrap
+              model: root.accounts.length
+              delegate: Column {
+                id: accountRow
+                required property int index
+                readonly property var account: root.accounts[index] || ({})
+                readonly property bool working: root.backfill && account.phase === "working"
+                readonly property bool playing: root.hasLiveRow && !!account.current
+                readonly property string statusKey: {
+                  if (playing) return "phase." + (root.progress.mode === "live" ? root.progress.phase : "watching");
+                  if (working) return "phase." + (root.progress.mode === "backfill" ? root.progress.phase : "preparing");
+                  return "account.phase." + account.phase;
+                }
+                readonly property bool expandable: !!account.id && !!account.progress && !working
+                readonly property bool expanded: expandable && root.expandedAccount === account.id
+                width: accountList.width
+                spacing: Style.space(4)
+
+                Item {
+                  width: parent.width
+                  implicitHeight: Math.max(line.implicitHeight, Style.space(24))
+
+                  RowLayout {
+                    id: line
+                    anchors.fill: parent
+                    spacing: Style.space(8)
+                    Label {
+                      objectName: "deadlock-sync-account-name"
+                      text: accountRow.account.name || ""
+                      font.pixelSize: Style.font.body
+                      font.bold: !!accountRow.account.current
+                      Layout.maximumWidth: line.width * 0.45
+                      maximumLineCount: 1
+                      elide: Text.ElideRight
+                    }
+                    Label {
+                      text: strings.t(accountRow.statusKey)
+                      Layout.fillWidth: true
+                      font.pixelSize: Style.font.caption
+                      color: ["attention", "auth"].indexOf(accountRow.account.phase) >= 0 ? Commons.Color.urgent : root.muted
+                    }
+                    Label {
+                      visible: root.accounts.length > 1 && !!accountRow.account.current
+                      text: strings.t("account.currentTag")
+                      color: Commons.Color.accent
+                      font.pixelSize: Style.font.caption
+                      font.bold: true
+                    }
+                    Label {
+                      visible: accountRow.expandable
+                      text: accountRow.expanded ? "▾" : "▸"
+                      color: root.muted
+                      Accessible.ignored: true
+                    }
+                  }
+                  MouseArea {
+                    id: toggle
+                    objectName: "deadlock-sync-account-toggle"
+                    anchors.fill: parent
+                    enabled: accountRow.expandable
+                    activeFocusOnTab: enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    Accessible.role: Accessible.Button
+                    Accessible.name: accountRow.account.name || ""
+                    Accessible.description: strings.t(accountRow.expanded ? "account.hidePass" : "account.showPass")
+                    Accessible.onPressAction: toggle.change()
+                    function change() {
+                      if (enabled) root.expandedAccount = accountRow.expanded ? "" : accountRow.account.id;
+                    }
+                    Keys.onReturnPressed: change()
+                    Keys.onEnterPressed: change()
+                    Keys.onSpacePressed: change()
+                    onClicked: change()
+                    onActiveFocusChanged: if (activeFocus) scroll.reveal(toggle)
+                    Rectangle {
+                      anchors.fill: parent
+                      visible: toggle.activeFocus
+                      color: "transparent"
+                      border.color: Commons.Color.accent
+                      radius: Style.cornerRadius
+                    }
+                  }
+                }
+                Label {
+                  visible: root.rowDeadline(accountRow.account)
+                  width: parent.width
+                  text: strings.t("recovery.nextAttempt").arg(root.timestamp(accountRow.account.next_at || 0))
+                  color: root.muted
+                  font.pixelSize: Style.font.caption
+                }
+                Label {
+                  visible: accountRow.playing && root.progress.updated_at !== null
+                  width: parent.width
+                  text: strings.t("progress.updated").arg(root.timestamp(root.progress.updated_at || 0))
+                  color: root.muted
+                  font.pixelSize: Style.font.caption
+                }
+                Loader {
+                  width: parent.width
+                  active: accountRow.working || accountRow.expanded
+                  visible: active
+                  sourceComponent: PassDetails {
+                    dataPoint: accountRow.working ? (root.progress.mode === "backfill" ? root.progress : Model.progress({mode: "backfill"}))
+                                                  : (accountRow.account.progress || Model.progress({mode: "backfill"}))
+                    historical: !accountRow.working
+                    showPhase: historical
+                  }
+                }
               }
             }
           }
-        }
-        Text {
-          objectName: "deadlock-sync-phase"
-          visible: root.hasProgress
-          width: parent.width
-          text: root.lastPass ? strings.t("progress.lastPass") : strings.t("phase." + root.progress.phase)
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          color: !root.lastPass && (root.progress.phase === "limited" || root.progress.phase === "failed") ? Commons.Color.urgent : Commons.Color.popups.text
-          wrapMode: Text.WordWrap
-        }
-        Column {
-          visible: root.hasProgress && root.progress.mode === "backfill"
-          width: parent.width
-          spacing: Style.space(5)
-          Text {
-            objectName: "deadlock-sync-progress-count"
-            visible: root.progressKnown
+          Label {
+            objectName: "deadlock-sync-skipped"
+            visible: root.recovery.enabled && root.recovery.skipped > 0
             width: parent.width
-            text: strings.tn("progress.processed", root.progress.total || 0)
-              .arg(Commons.I18n.formatNumber(root.progress.completed || 0))
-              .arg(Commons.I18n.formatNumber(root.progress.total || 0))
-            textFormat: Text.PlainText
-            font.family: Style.font.family
-            font.pixelSize: Style.font.bodySmall
-            color: Commons.Color.popups.text
-            wrapMode: Text.WordWrap
+            text: strings.tn("recovery.skipped", root.recovery.skipped).arg(Commons.I18n.formatNumber(root.recovery.skipped))
+            color: Commons.Color.urgent
           }
           Rectangle {
-            objectName: "deadlock-sync-progress-bar"
-            visible: root.progressKnown
             width: parent.width
-            height: Style.space(5)
-            radius: height / 2
-            color: Util.alpha(Commons.Color.popups.text, 0.15)
-            Rectangle {
-              width: parent.width * Model.progressRatio(root.progress)
-              height: parent.height
-              radius: parent.radius
-              color: Commons.Color.accent
+            height: Math.max(1, Style.space(1))
+            color: Util.alpha(root.ink, 0.16)
+          }
+          RowLayout {
+            width: parent.width
+            spacing: Style.space(8)
+            Label {
+              visible: root.working && root.status.memory > 0
+              text: strings.t("memory").arg(Commons.I18n.formatNumber(root.status.memory / 1048576, 1))
+              font.pixelSize: Style.font.caption
+              color: root.muted
+            }
+            Button {
+              objectName: "deadlock-sync-retry"
+              visible: root.liveFailure || (root.recovery.enabled && root.recovery.phase === "attention" &&
+                !root.recovery.repair_required && ["auth", "state_store"].indexOf(root.recovery.reason) >= 0)
+              text: strings.t("recovery.tryAgain")
+              enabled: !root.busy
+              focusable: true
+              foreground: root.ink
+              onActiveFocusChanged: if (activeFocus) scroll.reveal(this)
+              onClicked: if (root.service) root.service.activate(root.liveFailure ? "resume" : "enable")
+            }
+            Item { Layout.fillWidth: true }
+            Button {
+              objectName: "deadlock-sync-action"
+              text: strings.t(root.managing ? "quit" : "resume")
+              enabled: !root.busy && (root.managing || root.hasGame)
+              focusable: true
+              foreground: root.ink
+              onActiveFocusChanged: if (activeFocus) scroll.reveal(this)
+              onClicked: root.activate()
             }
           }
-          Text {
-            objectName: "deadlock-sync-uploaded"
-            visible: root.progress.uploaded !== null
-            width: parent.width
-            text: strings.tn("progress.uploaded", root.progress.uploaded || 0)
-              .arg(Commons.I18n.formatNumber(root.progress.uploaded || 0))
-            textFormat: Text.PlainText
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-            color: Util.alpha(Commons.Color.popups.text, 0.75)
-            wrapMode: Text.WordWrap
-          }
-          Text {
-            visible: root.progress.failed !== null && root.progress.failed > 0
-            width: parent.width
-            text: strings.tn("progress.failed", root.progress.failed || 0)
-              .arg(Commons.I18n.formatNumber(root.progress.failed || 0))
-            textFormat: Text.PlainText
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-            color: Commons.Color.urgent
-            wrapMode: Text.WordWrap
-          }
-          Text {
-            visible: root.progress.history !== null
-            width: parent.width
-            text: strings.tn("progress.history", root.progress.history || 0)
-              .arg(Commons.I18n.formatNumber(root.progress.history || 0))
-            textFormat: Text.PlainText
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-            color: Util.alpha(Commons.Color.popups.text, 0.75)
-            wrapMode: Text.WordWrap
-          }
         }
-        Text {
-          objectName: "deadlock-sync-detail"
-          width: parent.width
-          text: strings.t(root.detailKey)
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-          color: Util.alpha(Commons.Color.popups.text, 0.75)
-          wrapMode: Text.WordWrap
-        }
-        Text {
-          objectName: "deadlock-sync-next-attempt"
-          visible: Model.scheduledAttempt(root.recovery, Math.floor(Date.now() / 1000))
-          width: parent.width
-          text: strings.t("recovery.nextAttempt").arg(Qt.formatDateTime(new Date((root.recovery.next_at || 0) * 1000),
-            Qt.locale(Commons.I18n.formatLocale), Locale.ShortFormat))
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.bodySmall
-          color: Commons.Color.popups.text
-          wrapMode: Text.WordWrap
-        }
-        Text {
-          objectName: "deadlock-sync-skipped"
-          visible: root.recovery.enabled && root.recovery.skipped > 0
-          width: parent.width
-          text: strings.tn("recovery.skipped", root.recovery.skipped)
-            .arg(Commons.I18n.formatNumber(root.recovery.skipped))
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-          color: Commons.Color.urgent
-          wrapMode: Text.WordWrap
-        }
-        Text {
-          objectName: "deadlock-sync-last-activity"
-          visible: root.hasProgress && root.progress.updated_at !== null
-          width: parent.width
-          text: strings.t("progress.updated").arg(Qt.formatTime(new Date((root.progress.updated_at || 0) * 1000),
-            Qt.locale(Commons.I18n.formatLocale), Locale.ShortFormat))
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-          color: Util.alpha(Commons.Color.popups.text, 0.75)
-          wrapMode: Text.WordWrap
-        }
-        Text {
-          visible: root.working && root.status.memory > 0
-          width: parent.width
-          text: strings.t("memory").arg(Commons.I18n.formatNumber(root.status.memory / 1048576, 1))
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-          color: Util.alpha(Commons.Color.popups.text, 0.75)
-        }
-        Button {
-          objectName: "deadlock-sync-retry"
-          visible: root.liveFailure || (root.recovery.enabled && root.recovery.phase === "attention" &&
-            !root.recovery.repair_required &&
-            (root.recovery.reason === "auth" || root.recovery.reason === "state_store"))
-          width: parent.width
-          text: strings.t("recovery.tryAgain")
-          enabled: !root.busy
-          foreground: Commons.Color.popups.text
-          leftAlign: true
-          onClicked: if (root.service) root.service.activate(root.liveFailure ? "resume" : "enable")
-        }
-        Button {
-          objectName: "deadlock-sync-action"
-          width: parent.width
-          text: strings.t(root.managing ? "quit" : "resume")
-          enabled: !root.busy && (root.managing || root.hasGame)
-          foreground: Commons.Color.popups.text
-          leftAlign: true
-          onClicked: root.activate()
-        }
-        Text {
-          visible: root.errorText !== ""
-          width: parent.width
-          text: root.errorText
-          textFormat: Text.PlainText
-          font.family: Style.font.family
-          font.pixelSize: Style.font.caption
-          color: Commons.Color.urgent
-          wrapMode: Text.Wrap
-          maximumLineCount: 4
-          elide: Text.ElideRight
-        }
-      }
       }
     }
   }

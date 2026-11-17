@@ -10,6 +10,7 @@ import recovery
 MAX_TIME = 4102444800
 MAX_RECORDS = 128
 REASONS = {'', 'rate_limit', 'transient', 'account_in_use', 'settling', *recovery.BLOCKED}
+PASS_COUNTERS = ('completed', 'total', 'uploaded', 'failed', 'history')
 
 
 def default():
@@ -46,7 +47,7 @@ def clean_record(saved):
     if not isinstance(source, dict):
         raise ValueError('Invalid account progress')
     clean = recovery.empty_progress('backfill')
-    for key in ('completed', 'total', 'uploaded', 'failed', 'history'):
+    for key in PASS_COUNTERS:
         if source.get(key) is not None and not number(source.get(key), 10_000_000):
             raise ValueError('Invalid account progress number')
         clean[key] = source.get(key)
@@ -240,6 +241,15 @@ def row_phase(item, current, active, now):
     return 'cooldown' if item['hard_until'] > now else 'retry'
 
 
+def last_pass(progress):
+    if progress['mode'] != 'backfill':
+        return None
+    has_counts = any(progress[key] is not None for key in PASS_COUNTERS)
+    if has_counts or (progress['phase'] == 'complete' and progress['updated_at']):
+        return {key: progress[key] for key in ('mode', 'phase', *PASS_COUNTERS, 'updated_at')}
+    return None
+
+
 def view(value, metadata, units, session, now):
     identifier = focus(value, metadata, now)
     record = copy.deepcopy(value['accounts'].get(identifier, recovery.default()))
@@ -293,6 +303,8 @@ def view(value, metadata, units, session, now):
                   account_count=len(known), accounts=[])
     for identifier, item in zip(identifiers, known):
         phase = row_phase(item, identifier == value['current'], identifier == value['active'], now)
-        result['accounts'].append({'name': names.get(identifier, 'Steam account'), 'current': identifier == value['current'],
-                                   'phase': phase, 'next_at': max(item['hard_until'], item['next_at']) or None})
+        result['accounts'].append({'id': identifier, 'name': names.get(identifier, 'Steam account'),
+                                   'current': identifier == value['current'], 'phase': phase,
+                                   'next_at': max(item['hard_until'], item['next_at']) or None,
+                                   'progress': last_pass(item['progress'])})
     return result

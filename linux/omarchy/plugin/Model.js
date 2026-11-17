@@ -43,6 +43,15 @@ function progressRatio(value) {
   return progressKnown(value) ? Math.min(1, value.completed / value.total) : 0;
 }
 
+function lastPass(value) {
+  if (!value || value.mode !== "backfill") return null;
+  var pass = progress(value);
+  var hasCounts = ["completed", "total", "uploaded", "failed", "history"].some(function(key) {
+    return pass[key] !== null;
+  });
+  return hasCounts || (pass.phase === "complete" && pass.updated_at > 0) ? pass : null;
+}
+
 function recovery(value) {
   value = value && typeof value === "object" ? value : {};
   var phases = ["off", "working", "cooldown", "retry", "game", "caught_up", "waiting_for_account", "attention"];
@@ -58,9 +67,11 @@ function recovery(value) {
     account_count: count(value.account_count, 128) || 0,
     accounts: Array.isArray(value.accounts) ? value.accounts.slice(0, 64).map(function(item) {
       item = item && typeof item === 'object' ? item : {};
-      return {name: accountName(item.name), current: item.current === true,
+      var id = typeof item.id === 'string' && /^[1-9][0-9]{0,9}$/.test(item.id) &&
+        Number(item.id) <= 4294967295 ? item.id : '';
+      return {id: id, name: accountName(item.name), current: item.current === true,
         phase: ['working', 'attention', 'auth', 'choose_account', 'caught_up', 'cooldown', 'retry'].indexOf(item.phase) >= 0 ? item.phase : 'attention',
-        next_at: count(item.next_at, 4102444800)};
+        next_at: count(item.next_at, 4102444800), progress: lastPass(item.progress)};
     }) : []};
 }
 
@@ -84,7 +95,9 @@ function scheduledAttempt(value, now) {
 function parse(text) {
   var result = empty();
   try {
-    var value = JSON.parse(String(text).slice(0, 65536));
+    // Python can emit 12 ASCII characters per supplementary Unicode character
+    // in each 80-character Steam name. Leave room for all 64 account snapshots.
+    var value = JSON.parse(String(text).slice(0, 131072));
     var allowed = ["active", "activating", "deactivating", "inactive", "failed", "unavailable"];
     ["live", "backfill"].forEach(function(key) {
       result[key] = allowed.indexOf(value[key]) >= 0 ? value[key] : "unavailable";

@@ -10,7 +10,7 @@ controller; the Linux version integrates with the existing Omarchy bar.
 | Platform | Download | Setup |
 | --- | --- | --- |
 | Windows x64 | [Windows installer](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.2.0/Deadlock-Sync-0.2.0-Setup.exe) | Double-click, then **Next → Install → Finish**. [Windows instructions](windows/README.md). |
-| Omarchy Linux x64 | [Linux archive](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.2.1/deadlock-sync-0.2.1-linux-omarchy-x64.tar.gz) | Extract, preview/install, then reload the shell. [Linux instructions](linux/README.md). |
+| Omarchy Linux x64 | [Linux archive](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.2.2/deadlock-sync-0.2.2-linux-omarchy-x64.tar.gz) | Extract, preview/install, then reload the shell. [Linux instructions](linux/README.md). |
 
 The Windows installer starts the tray app and opens its status window when you
 click Finish. Starting with Windows is checked by default on a fresh install;
@@ -19,7 +19,7 @@ updates retain your previous startup choice. No terminal, administrator access,
 syncing needs internet access. This community build is unsigned, so Windows may
 show a publisher warning.
 
-See the [release page](https://github.com/mapleroyal/deadlock-sync/releases/tag/v0.2.1)
+See the [release page](https://github.com/mapleroyal/deadlock-sync/releases/tag/v0.2.2)
 for checksums and validation notes. This release is a preview. The Linux
 package requires Omarchy; it is not a generic GNOME/KDE tray application.
 

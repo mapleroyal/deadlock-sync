@@ -63,3 +63,23 @@ assert.equal(accountView.current_account,'<img src=https://bad>','account names 
 assert.equal(accountView.accounts[0].current,true);
 assert.equal(m.recovery({accounts:[{name:42,current:'true',phase:'invalid',next_at:Infinity}]}).accounts[0].phase,'attention');
 assert.equal(m.recovery({current_account:'x'.repeat(400)}).current_account.length,80);
+
+const savedRow = (id, progress) => m.recovery({accounts: [{id, progress}]}).accounts[0];
+assert.equal(savedRow('4294967295', progress).id, '4294967295');
+for (const id of ['0', '01', '4294967296', 42, true, '1e2']) assert.equal(savedRow(id).id, '');
+assert.deepEqual(savedRow('1', progress).progress, progress);
+assert.equal(savedRow('1', {mode:'backfill', phase:'failed', updated_at:100}).progress, null);
+assert.equal(savedRow('1', {mode:'backfill', phase:'preparing', updated_at:100}).progress, null);
+assert.equal(savedRow('1', {mode:'live', uploaded:3}).progress, null);
+assert.equal(savedRow('1', {mode:'backfill', total:'1', history:-1}).progress, null);
+assert.equal(savedRow('1', {mode:'backfill', phase:'complete', history:0}).progress.history, 0);
+assert.equal(savedRow('1', {mode:'backfill', phase:'complete', updated_at:100}).progress.updated_at, 100);
+
+const manyAccounts = Array.from({length:64}, (_, i) => ({
+  id:String(i+1), name:'😀'.repeat(80), current:i===0, phase:'cooldown', next_at:2000000000, progress
+}));
+// Match Python json.dumps' ASCII escaping of both UTF-16 units.
+const asciiJson = JSON.stringify({live:'inactive', backfill:'inactive', recovery:{accounts:manyAccounts}})
+  .replace(/[^\x00-\x7f]/g, c => '\\u' + c.charCodeAt(0).toString(16).padStart(4, '0'));
+assert.ok(asciiJson.length > 65536);
+assert.equal(m.parse(asciiJson).recovery.accounts[63].progress.uploaded, 10);

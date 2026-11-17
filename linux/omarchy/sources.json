@@ -8,13 +8,13 @@
     },
     {
       "path": "plugin/BarWidget.qml",
-      "sha256": "9e22e830c99d6e78d97cbe215b71729adff00942124bc20ce355cca6c5e9ecdb",
+      "sha256": "7b1243e000f591e75a635d15b9cb7d725d95d43351ce138b91ac68c6b2f07490",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "plugin/Model.js",
-      "sha256": "8b8cca4adf177d92161931b3ad0fd9d6be65787f51eee33172f135fcfb3c4afe",
+      "sha256": "e59a0d73389c5866c03300ff12566057b49a3d94e21ed6b870cf81ba8dfcdd53",
       "mode": "0o644",
       "executable": false
     },
@@ -26,7 +26,7 @@
     },
     {
       "path": "plugin/backend/account_state.py",
-      "sha256": "13737239bf7601214197aa5b861121af98535b2563d2751802476631a755bf5d",
+      "sha256": "f20c3c30aa33aa17a5690aa5d9512e2acf217c7aaf71f5f59ebc0ac0aa85b68e",
       "mode": "0o644",
       "executable": false
     },
@@ -56,13 +56,13 @@
     },
     {
       "path": "plugin/i18n/en.json",
-      "sha256": "26031875083a2888e4656b3e802f84eb8e7c402a302ccadba95688e3f4b622e0",
+      "sha256": "bf269e826446936e4926351ae698eca62fd325973e2fc0c1f5db3feaacef1a98",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "plugin/manifest.json",
-      "sha256": "477fab70c1278f24c4c0dc5896392306002db27408e1784200b5a17b0b8d1cf3",
+      "sha256": "d52cb8c9521a43e10079c72a8daf443c541137ba58c698daa0f6b6872f333135",
       "mode": "0o644",
       "executable": false
     },
@@ -92,7 +92,7 @@
     },
     {
       "path": "tests/model.test.cjs",
-      "sha256": "a0a1a3ade8ae01336c6de0f1b7b14d56fdb375bcf0ed2d66703c97d16393e369",
+      "sha256": "56cc1e96af2ed54438ec3420d6ecd8228230f18d1ab80d60d3b352d360f3e93b",
       "mode": "0o644",
       "executable": false
     },
@@ -110,13 +110,13 @@
     },
     {
       "path": "tests/qml/shell.qml",
-      "sha256": "f699557ad361a1e518c494fda45aac5748b8690949e47044815296291d3d8436",
+      "sha256": "ac14574b024c1be76c426cb5b2a50792b43e04b3deb609798b5dcc6e2d0128f2",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "tests/test_accounts.py",
-      "sha256": "5061ae101e9363ad664add4261bdb042c10dc7f9800b9898b49e205eda691bf6",
+      "sha256": "000c71678bed084b0229b862c8d0556a7b3c606d23fc19d94d9bd65c77e94c51",
       "mode": "0o644",
       "executable": false
     },

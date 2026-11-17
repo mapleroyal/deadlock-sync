@@ -67,6 +67,30 @@ class AccountMetadataTests(unittest.TestCase):
 
 
 class AccountPolicyTests(unittest.TestCase):
+    def test_account_rows_keep_individual_pass_evidence_with_duplicate_display_names(self):
+        value = account_state.default()
+        metadata = accounts.decode(vdf(2, {1: 'Twin', 2: 'Twin', 3: 'Other'}))
+        account_state.reconcile(value, metadata)
+        value['accounts']['2']['progress'] = recovery.empty_progress('backfill')
+        value['accounts']['2']['progress'].update(phase='complete', history=77, total=1, completed=1,
+                                                  uploaded=1, failed=0, updated_at=100)
+        value['accounts']['1']['progress'] = recovery.empty_progress('backfill')
+        value['accounts']['1']['progress'].update(phase='failed', updated_at=101)
+        rows = account_state.view(value, metadata, {}, '', 102)['accounts']
+        self.assertEqual([(r['id'], r['name'], r['current']) for r in rows],
+                         [('2', 'Twin', True), ('1', 'Twin', False), ('3', 'Other', False)])
+        self.assertEqual(rows[0]['progress'], {'mode': 'backfill', 'phase': 'complete', 'history': 77, 'total': 1,
+            'completed': 1, 'uploaded': 1, 'failed': 0, 'updated_at': 100})
+        self.assertIsNone(rows[1]['progress'])
+        self.assertIsNone(rows[2]['progress'])
+
+        # A zero-match history is a real result. A truncated successful log can still date a check.
+        value['accounts']['2']['progress']['history'] = 0
+        value['accounts']['1']['progress']['phase'] = 'complete'
+        rows = account_state.view(value, metadata, {}, '', 102)['accounts']
+        self.assertEqual(rows[0]['progress']['history'], 0)
+        self.assertEqual(rows[1]['progress']['updated_at'], 101)
+
     def test_current_first_then_others_while_current_is_rate_limited(self):
         value = account_state.default(); value['enabled'] = True
         metadata = accounts.decode(vdf(2))
