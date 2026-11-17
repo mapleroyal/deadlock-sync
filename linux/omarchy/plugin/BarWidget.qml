@@ -17,7 +17,7 @@ Panel {
   readonly property bool hasProgress: (working || lastPass) && progress.mode !== ""
   readonly property bool progressKnown: hasProgress && Model.progressKnown(progress)
   readonly property bool hasGame: !!service && service.hasGame
-  readonly property bool liveFailure: hasGame && status.live === "failed"
+  readonly property bool liveFailure: hasGame && status.live === "failed" && recovery.reason !== "upload_rate_limit"
   readonly property bool working: Model.running(status.live) || Model.running(status.backfill)
   readonly property bool busy: !!service && service.commandBusy
   readonly property string errorText: service ? service.actionError : ""
@@ -78,6 +78,11 @@ Panel {
       onCloseRequested: root.close()
       onActivateRequested: root.activate()
 
+      Flickable {
+        anchors.fill: parent
+        contentHeight: content.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
       Column {
         id: content
         width: parent.width
@@ -99,6 +104,62 @@ Panel {
           font.pixelSize: Style.font.bodySmall
           color: root.attention ? Commons.Color.urgent : Commons.Color.popups.text
           wrapMode: Text.WordWrap
+        }
+        Text {
+          objectName: "deadlock-sync-current-account"
+          visible: root.recovery.current_account !== ""
+          width: parent.width
+          text: strings.t("account.current").arg(root.recovery.current_account)
+          textFormat: Text.PlainText
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          color: Commons.Color.popups.text
+          wrapMode: Text.WordWrap
+          maximumLineCount: 2
+          elide: Text.ElideRight
+        }
+        Text {
+          objectName: "deadlock-sync-active-account"
+          visible: root.recovery.active_account !== ""
+          width: parent.width
+          text: strings.t("account.working").arg(root.recovery.active_account)
+          textFormat: Text.PlainText
+          font.family: Style.font.family
+          font.pixelSize: Style.font.bodySmall
+          color: Commons.Color.popups.text
+          wrapMode: Text.WordWrap
+          maximumLineCount: 2
+          elide: Text.ElideRight
+        }
+        Flickable {
+          objectName: "deadlock-sync-account-list"
+          visible: root.recovery.accounts.length > 1
+          width: parent.width
+          height: visible ? Math.min(accountRows.implicitHeight, Style.space(100)) : 0
+          contentHeight: accountRows.implicitHeight
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          Column {
+            id: accountRows
+            width: parent.width
+            spacing: Style.space(4)
+            Repeater {
+              model: root.recovery.accounts
+              delegate: Text {
+                required property var modelData
+                width: accountRows.width
+                text: modelData.name + (modelData.current ? " (" + strings.t("account.currentTag") + ")" : "") +
+                  ": " + strings.t("account.phase." + modelData.phase) +
+                  ((modelData.next_at || 0) > Math.floor(Date.now() / 1000) && ["cooldown", "retry"].indexOf(modelData.phase) >= 0 ?
+                    " — " + Qt.formatDateTime(new Date(modelData.next_at * 1000), Qt.locale(Commons.I18n.formatLocale), Locale.ShortFormat) : "")
+                textFormat: Text.PlainText
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+                color: Util.alpha(Commons.Color.popups.text, 0.75)
+                wrapMode: Text.WordWrap
+              }
+            }
+          }
         }
         Text {
           objectName: "deadlock-sync-phase"
@@ -265,6 +326,7 @@ Panel {
           maximumLineCount: 4
           elide: Text.ElideRight
         }
+      }
       }
     }
   }

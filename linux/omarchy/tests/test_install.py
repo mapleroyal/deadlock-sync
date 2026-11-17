@@ -51,7 +51,8 @@ class InstallTests(unittest.TestCase):
         self.assertIn('different user %% $$', live)
         self.assertIn(' --no-gc\n', live)
         self.assertNotIn('--own-matches', live)
-        self.assertIn(' --own-matches\n', backfill)
+        self.assertIn(' run-selected ', backfill)
+        self.assertNotIn(' --own-matches', backfill)
         self.assertNotIn('--no-gc', backfill)
         self.assertNotIn('backfill-finished', backfill)
         for text in (live, backfill):
@@ -128,6 +129,28 @@ class InstallTests(unittest.TestCase):
             (self.base / 'asset').write_bytes(bad)
             with self.assertRaises(ValueError):
                 install.verified_asset(asset, self.base)
+
+    def test_display_guard_serializes_with_screens_off_and_releases_lock(self):
+        with install.display_install_guard(self.base):
+            with self.assertRaisesRegex(ValueError, 'active or restoring'):
+                with install.display_install_guard(self.base):
+                    self.fail('Must not enter a busy display transaction')
+        with install.display_install_guard(self.base):
+            pass
+
+    def test_display_guard_rejects_pending_or_dangling_journal(self):
+        directory = self.base / 'user1-controls-screens-off'
+        directory.mkdir()
+        journal = directory / 'state.json'
+        journal.write_text('{"active": false}')
+        with self.assertRaisesRegex(ValueError, 'restoration is pending'):
+            with install.display_install_guard(self.base):
+                self.fail('Must preserve pending restoration')
+        journal.unlink()
+        journal.symlink_to(self.base / 'absent')
+        with self.assertRaisesRegex(ValueError, 'restoration is pending'):
+            with install.display_install_guard(self.base):
+                self.fail('Must not follow an uncertain journal link')
 
     def test_preflight_accepts_fresh_units_and_rejects_active_or_masked_units(self):
         shell = self.base / 'omarchy/shell'

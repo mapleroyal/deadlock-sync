@@ -17,6 +17,10 @@ internal sealed class SyncApplication : ApplicationContext
     private readonly string testRoot;
     private readonly string dataRoot;
     private readonly string executable;
+    private readonly SteamAccountReader accountReader;
+    private SteamAccounts accounts = SteamAccounts.Empty;
+    private string accountError = "";
+    private string workerAccount = "";
     private readonly SemaphoreSlim gate = new(1, 1);
     private NativeWorker? worker;
     private RunEvidence? evidence;
@@ -31,16 +35,19 @@ internal sealed class SyncApplication : ApplicationContext
     private string saved = "";
     private string lastPhase = "";
     private string livePhase = "watching";
-    internal const string IngestHash = "d0e2a772ffc075713cc21759cb0a3b9e378a3235e59fc25cc7ed5b5d1f884464";
+    internal const string IngestHash = "b75b8e149a0ae51bf6530c7e43b22b7fedc8e4ae67eed6e0cca477715b0153e6";
     private const string GameIdentityWarning = "A game process was detected but its identity or access could not be verified. History recovery is paused; run Steam and the game normally, without elevation.";
 
     public SyncApplication(SingleInstance instance, string testRoot, string command)
     {
         this.testRoot = testRoot;
+        accountReader = new SteamAccountReader(testRoot);
         dataRoot = testRoot.Length != 0 ? testRoot : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DeadlockSync", "state");
         Directory.CreateDirectory(dataRoot);
         store = new StateStore(Path.Combine(dataRoot, "recovery.json"));
         state = store.Load();
+        AccountPolicy.RecoverInterrupted(state, Now);
+        Save();
         executable = Path.Combine(AppContext.BaseDirectory, "ingest", "deadlock-api-ingest.exe");
         dispatch = new Form { ShowInTaskbar = false, FormBorderStyle = FormBorderStyle.FixedToolWindow };
         _ = dispatch.Handle;
@@ -112,7 +119,8 @@ internal sealed class SyncApplication : ApplicationContext
             }
             else if (command is "enable" or "enable-show")
             {
-                RecoveryPolicy.Enable(state, Now);
+                RefreshAccounts();
+                AccountPolicy.Enable(state, Now);
                 liveFailures = 0; liveNotBefore = 0; error = "";
                 Save();
                 if (command == "enable-show") ShowPanel();
@@ -140,8 +148,9 @@ internal sealed class SyncApplication : ApplicationContext
         {
             long now = Now;
             game = FindGame();
+            RefreshAccounts();
             if (error == GameIdentityWarning && !game.Contains("unreadable:") && !game.Contains("unverified:")) error = "";
-            var transition = RecoveryPolicy.ObserveGame(state, game, now);
+            var transition = AccountPolicy.ObserveGame(state, game, now);
             if (transition == GameTransition.Started) { liveFailures = 0; liveNotBefore = 0; error = ""; }
             Save();
             Drain();
@@ -157,7 +166,7 @@ internal sealed class SyncApplication : ApplicationContext
             }
             if (worker is { Mode: "live" } && evidence?.EndpointRateLimited == true)
             {
-                RecoveryPolicy.ObserveEvidence(state, evidence, now); Save();
+                AccountPolicy.ObserveEvidence(state, "", evidence, now); Save();
                 await StopWorkerAsync(true);
             }
             if (worker is { Mode: "live" } && evidence?.EndpointAccessDenied == true)
@@ -169,7 +178,7 @@ internal sealed class SyncApplication : ApplicationContext
             if (worker is { Mode: "backfill" } && evidence is not null && (evidence.StorageFailure || evidence.RateLimited))
             {
                 // Persist a hard deadline as soon as evidence is observed, including before a forced stop.
-                RecoveryPolicy.ObserveEvidence(state, evidence, now);
+                AccountPolicy.ObserveEvidence(state, workerAccount, evidence, now);
                 Save();
                 await StopWorkerAsync(false);
             }
@@ -189,13 +198,17 @@ internal sealed class SyncApplication : ApplicationContext
             else
             {
                 if (worker is { Mode: "live" }) await StopWorkerAsync(true);
-                if (worker is null && RecoveryPolicy.CanBackfill(state, game, now))
+                if (worker is { Mode: "backfill" } && (accountError.Length != 0
+                    || AccountPolicy.ShouldPreempt(state, workerAccount, accounts.Ids, now)))
+                    await StopWorkerAsync(true);
+                string selected = accountError.Length == 0 ? AccountPolicy.Select(state, accounts.Ids, now) : "";
+                if (worker is null && selected.Length != 0)
                 {
                     game = FindGame(); // Catch launch before its first visible window.
                     if (game.Length == 0)
                     {
-                        RecoveryPolicy.Reserve(state, now); Save();
-                        StartWorker("backfill");
+                        AccountPolicy.Reserve(state, selected, now); Save();
+                        StartWorker("backfill", selected);
                     }
                 }
             }
@@ -205,9 +218,24 @@ internal sealed class SyncApplication : ApplicationContext
         finally { gate.Release(); }
     }
 
-    private void StartWorker(string mode)
+    private void RefreshAccounts()
+    {
+        try
+        {
+            var found = accountReader.Read();
+            AccountPolicy.ObserveAccounts(state, found.Ids, found.CurrentId);
+            accounts = found; accountError = "";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException
+            or System.Security.SecurityException)
+        { accountError = "Steam account metadata is unavailable; history recovery is waiting. " + e.Message; }
+    }
+
+    private void StartWorker(string mode, string selectedAccount = "")
     {
         if (worker is not null) throw new InvalidOperationException("An ingest worker is already running.");
+        if (mode == "backfill" && (!AccountPolicy.ValidId(selectedAccount) || !accounts.Ids.Contains(selectedAccount)))
+            throw new InvalidOperationException("History recovery requires one known Steam account.");
         try
         {
             if (testRoot.Length == 0)
@@ -221,14 +249,17 @@ internal sealed class SyncApplication : ApplicationContext
                     verified = true;
                 }
                 if (mode == "backfill") CheckUpstreamStore();
-                worker = new NativeWorker(executable, [mode == "live" ? "--no-gc" : "--own-matches"], mode);
+                worker = new NativeWorker(executable, mode == "live" ? ["--no-gc"]
+                    : ["--own-matches", "--account-id", selectedAccount], mode);
             }
             else
             {
                 string fixtureFile = Path.Combine(testRoot, "fixture.txt");
                 string fixture = File.Exists(fixtureFile) ? File.ReadAllText(fixtureFile).Trim() : "hold";
-                worker = new NativeWorker(Environment.ProcessPath!, ["--fake-worker", "--mode", mode, "--fixture", fixture], mode);
+                worker = new NativeWorker(Environment.ProcessPath!, ["--fake-worker", "--mode", mode, "--fixture", fixture,
+                    "--account-id", selectedAccount, "--test-trigger", Path.Combine(testRoot, "worker-event.txt")], mode);
             }
+            workerAccount = mode == "backfill" ? selectedAccount : "";
             evidence = new RunEvidence(mode); livePhase = "watching";
             error = "";
         }
@@ -238,6 +269,8 @@ internal sealed class SyncApplication : ApplicationContext
             if (mode == "live") { liveFailures++; liveNotBefore = Now + Math.Min(300, 10 * (1 << liveFailures)); }
             else
             {
+                state.ActiveAccountId = "";
+                state.NextWorkerUtc = Math.Max(state.NextWorkerUtc, Now + AccountPolicy.WorkerSpacing);
                 state.Pending = true;
                 state.Reason = e is InvalidDataException or UnauthorizedAccessException ? "state_store" : "unavailable";
             }
@@ -329,7 +362,8 @@ internal sealed class SyncApplication : ApplicationContext
         if (worker is null || evidence is null) return;
         foreach (var (line, at) in worker.Drain()) evidence.AddLine(line, at);
         if (worker.OutputTruncated) evidence.MarkTruncated();
-        if (worker.Mode == "backfill" || evidence.EndpointRateLimited) { RecoveryPolicy.ObserveEvidence(state, evidence, Now); Save(); }
+        if (worker.Mode == "backfill" || evidence.EndpointRateLimited)
+        { AccountPolicy.ObserveEvidence(state, workerAccount, evidence, Now); Save(); }
         if (worker.Mode == "live") livePhase = evidence.Progress.Phase;
     }
 
@@ -350,7 +384,7 @@ internal sealed class SyncApplication : ApplicationContext
         Drain();
         if (worker.OutputTruncated || worker.DrainTimedOut) evidence.MarkIncomplete();
         if (worker.Mode == "backfill")
-            RecoveryPolicy.Finish(state, worker.RunId, worker.ExitCode, evidence, Now, deliberate);
+            AccountPolicy.Finish(state, workerAccount, worker.RunId, worker.ExitCode, evidence, Now, deliberate);
         else if (!deliberate)
         {
             liveFailures++;
@@ -358,7 +392,7 @@ internal sealed class SyncApplication : ApplicationContext
             error = "Live worker stopped. " + (liveFailures >= 3 ? "Choose Enable syncing to retry after checking Steam/game permissions." : "Retrying shortly.");
         }
         Save(); // Consume completion durably before releasing the worker and its final evidence.
-        worker.Dispose(); worker = null; evidence = null;
+        worker.Dispose(); worker = null; evidence = null; workerAccount = "";
     }
 
     private void Save()
@@ -376,55 +410,72 @@ internal sealed class SyncApplication : ApplicationContext
         Render();
     }
 
-    private string Snapshot() => JsonSerializer.Serialize(new
+    private AccountView CurrentView() => AccountPolicy.View(state, accounts.Ids, game, Now, worker?.Mode ?? "", workerAccount);
+
+    private string Snapshot()
     {
-        running = true, version = "0.1.1", testMode = testRoot.Length > 0,
-        enabled = state.Enabled, phase = RecoveryPolicy.Phase(state, game, Now, worker?.Mode ?? ""),
-        reason = state.Reason, pending = state.Pending, workerMode = worker?.Mode ?? "", workerPid = worker?.Pid,
-        controllerPid = Environment.ProcessId, controllerMemoryBytes = Process.GetCurrentProcess().WorkingSet64,
-        gamePresent = game.Length > 0, nextAtUtc = RecoveryPolicy.Deadline(state), hardUntilUtc = state.HardUntilUtc,
-        uploadHardUntilUtc = state.UploadHardUntilUtc,
-        iconVisible = icon.Visible, progress = evidence?.Progress ?? state.Progress, unavailable = state.Skipped,
-        error, stateCorrupt = state.Corrupt
-    });
+        var view = CurrentView();
+        return JsonSerializer.Serialize(new
+        {
+            running = true, version = "0.2.0", testMode = testRoot.Length > 0,
+            enabled = state.Enabled, phase = accountError.Length != 0 && game.Length == 0 ? "attention" : view.Phase,
+            reason = view.Reason, pending = accounts.Ids.Any(x => state.Accounts[x].Pending),
+            workerMode = worker?.Mode ?? "", workerPid = worker?.Pid, workerAccountId = workerAccount,
+            currentAccountId = state.CurrentAccountId,
+            accounts = accounts.Accounts.Select(a => new { id = a.Id, name = a.Name, current = a.Id == state.CurrentAccountId,
+                pending = state.Accounts[a.Id].Pending, reason = state.Accounts[a.Id].Reason,
+                nextAtUtc = RecoveryPolicy.Deadline(state.Accounts[a.Id]), hardUntilUtc = state.Accounts[a.Id].HardUntilUtc }),
+            controllerPid = Environment.ProcessId, controllerMemoryBytes = Process.GetCurrentProcess().WorkingSet64,
+            gamePresent = game.Length > 0, nextAtUtc = view.NextAtUtc, hardUntilUtc = state.HardUntilUtc,
+            uploadHardUntilUtc = state.UploadHardUntilUtc, legacyHardUntilUtc = state.HardUntilUtc,
+            iconVisible = icon.Visible, progress = evidence?.Progress ?? view.Progress, unavailable = view.Skipped,
+            error = accountError.Length != 0 ? accountError : error, stateCorrupt = state.Corrupt
+        });
+    }
 
     private void Render()
     {
-        string phase = RecoveryPolicy.Phase(state, game, Now, worker?.Mode ?? "");
+        var view = CurrentView();
+        string phase = accountError.Length != 0 && game.Length == 0 ? "attention" : view.Phase;
         icon.Visible = state.Enabled && !exiting;
         string title = phase switch
         {
             "game" => state.UploadHardUntilUtc > Now ? "Upload service cooldown · game running" : worker?.Mode == "live" ? "Live sync · " + (livePhase == "reading" ? "reading memory" : livePhase == "failed" ? "memory needs attention" : "watching game") : "Game running · sync waiting",
-            "working" => "Recovering match history",
-            "cooldown" => "Waiting for Steam cooldown",
+            "working" => "Recovering history · " + accounts.Label(workerAccount),
+            "cooldown" => view.Reason == "upload_rate_limit" ? "Waiting for upload service cooldown"
+                : view.Reason == "legacy_cooldown" ? "Waiting for earlier recovery cooldown" : "Waiting for Steam cooldown",
             "attention" => "History recovery needs attention",
             "caught_up" => "Available history processed",
-            "retry" => state.Reason == "settling" ? "Waiting after game exit" : "Waiting to retry history recovery",
+            "retry" => view.Reason == "settling" ? "Waiting before history recovery" : "Waiting to retry history recovery",
             _ => "Syncing stopped"
         };
         icon.Text = ("Deadlock Sync — " + title)[..Math.Min(63, ("Deadlock Sync — " + title).Length)];
         if (details is not null)
         {
-            var p = evidence?.Progress ?? state.Progress;
-            string next = RecoveryPolicy.Deadline(state) > Now
-                ? DateTimeOffset.FromUnixTimeSeconds(RecoveryPolicy.Deadline(state)).ToLocalTime().ToString("f") : "When eligible";
+            var p = evidence?.Progress ?? view.Progress;
+            string next = view.NextAtUtc > Now
+                ? DateTimeOffset.FromUnixTimeSeconds(view.NextAtUtc).ToLocalTime().ToString("f") : "When eligible";
             if (worker?.Mode == "backfill") next = "Running now";
-            else if (game.Length > 0) next = RecoveryPolicy.Deadline(state) > Now
+            else if (game.Length > 0) next = view.NextAtUtc > Now
                 ? "After game exit, no earlier than " + next : "After game exit and a short settling delay";
             details.Text = title + "\n\n" +
+                $"Current Steam account: {(accountError.Length == 0 ? accounts.Label(state.CurrentAccountId) : "Unavailable")}\n" +
+                $"History account: {accounts.Label(view.AccountId)}\n\n" +
                 $"Processed: {Count(p.Completed)} / {Count(p.Total)} missing matches\n" +
                 $"Confirmed uploads this pass: {Count(p.Uploaded)}\nFailed this pass: {Count(p.Failed)}\n" +
-                $"Unavailable older matches: {state.Skipped}\n" +
+                $"Unavailable older matches: {view.Skipped}\n" +
                 $"Last update: {(p.UpdatedAtUtc is long stamp ? DateTimeOffset.FromUnixTimeSeconds(stamp).ToLocalTime().ToString("g") : "Waiting for activity")}\n" +
-                $"Next history attempt: {(state.Pending ? next : "After your next game")}\n" +
-                $"Reason: {Reason(state.Reason)}\n\n" +
+                $"Next history attempt: {(view.Phase != "caught_up" ? next : "After your next game or account change")}\n" +
+                $"Reason: {Reason(view.Reason)}\n\n" +
+                AccountSummary() + "\n" +
+                (accountError.Length > 0 ? accountError + "\n\n" : "") +
                 (error.Length > 0 ? error + "\n\n" : "") +
-                "Live gameplay takes priority. Recovery uses Steam's remembered accounts.\n" +
+                "Live gameplay takes priority. The current eligible Steam account goes first; other accounts continue while it waits.\n" +
                 "Quit syncing hides the icon and retains a small next-game watcher. Exit app stops everything.\n\n" +
                 $"Controller memory: {Process.GetCurrentProcess().WorkingSet64 / 1024 / 1024} MB";
         }
         string noticePhase = state.UploadHardUntilUtc > Now ? "cooldown" : phase;
-        string noticeKey = noticePhase + ":" + state.ProcessedRunId + ":" + state.HardUntilUtc + ":" + state.UploadHardUntilUtc;
+        string noticeKey = noticePhase + ":" + view.AccountId + ":" + view.NextAtUtc + ":" + state.UploadHardUntilUtc;
         if (state.Enabled && noticePhase != lastPhase && noticePhase is "cooldown" or "attention" or "caught_up" && noticeKey != state.LastNoticeKey)
         {
             state.LastNoticeKey = noticeKey;
@@ -435,10 +486,25 @@ internal sealed class SyncApplication : ApplicationContext
     }
 
     private static string Count(int? count) => count?.ToString("N0") ?? "Unknown";
+    private string AccountSummary()
+    {
+        var lines = accounts.Accounts.OrderBy(a => a.Id == state.CurrentAccountId ? 0 : 1).Take(10).Select(a =>
+        {
+            var item = state.Accounts[a.Id];
+            string status = a.Id == workerAccount ? "Recovering now" : !item.Pending ? "Caught up"
+                : RecoveryPolicy.IsBlocked(item.Reason) ? Reason(item.Reason)
+                : RecoveryPolicy.Deadline(item) > Now ? "Next attempt " + DateTimeOffset.FromUnixTimeSeconds(RecoveryPolicy.Deadline(item)).ToLocalTime().ToString("g")
+                : "Waiting for its turn";
+            return a.Name + (a.Id == state.CurrentAccountId ? " (current)" : "") + ": " + status;
+        });
+        return string.Join("\n", lines) + (accounts.Accounts.Count > 10 ? "\nMore remembered accounts are queued." : "") + "\n";
+    }
     private static string Reason(string reason) => reason switch
     {
         "rate_limit" => "Steam throttled requests; the scheduled retry is not a guaranteed reset time.",
         "upload_rate_limit" => "The upload service throttled requests; both live uploads and history recovery are waiting.",
+        "legacy_cooldown" => "An earlier cooldown had no reliable account identity. Its original deadline is being preserved once; new Steam limits are tracked per account.",
+        "no_accounts" => "Sign in to Steam with remembered login. Account changes are detected automatically.",
         "transient" => "Temporary connection or service failure.",
         "account_in_use" => "Steam account is busy playing a game.",
         "auth" => "Sign in to Steam with remembered login, finish Steam Guard, then choose Enable syncing.",

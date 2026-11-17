@@ -53,7 +53,7 @@ def main():
             with urllib.request.urlopen(pin['asset']['url'], timeout=90) as response, engine.open('wb') as output:
                 shutil.copyfileobj(response, output)
         if digest(engine) != pin['asset']['sha256'] or engine.stat().st_size != pin['asset']['size']:
-            raise SystemExit('Official ingest asset failed pinned hash/size verification')
+            raise SystemExit('Ingest engine failed pinned hash/size verification')
         license_file = payload / 'INGEST-LICENSE.txt'
         if args.ingest_license:
             shutil.copyfile(args.ingest_license, license_file)

@@ -1,6 +1,54 @@
 # Release validation
 
-Version 0.1.1, November 16, 2026. Conventional Windows installer preview.
+Version 0.2.0, November 16, 2026. Current-account priority and separate recovery state.
+
+## Account-aware release 0.2.0
+
+All binaries were built locally. GitHub Actions is disabled in both app and engine
+repositories; build workflows and automatic dependency-update configuration are
+removed. No remote CI artifact was used.
+
+The selected-account engine is based on upstream v0.4.8 and built from
+`0ba1f8cb9785c39029aa9d99716f2ef02d61e32b`. Linux was compiled in a local rootless
+Ubuntu 22.04 environment and retains the glibc 2.35 baseline. Its 53 synthetic
+checks and strict clippy checks passed. The local MinGW Windows build imports
+only Windows system DLLs; CLI guards and three account-selection tests passed
+through headless Wine. Tests made no real Steam requests.
+
+The Windows app compiled locally with zero warnings/errors and all 77 Core
+checks passed. The account policy tests cover current-account priority, preemption,
+per-account cooldowns/auth failures/progress, global upload limits, metadata
+ambiguity, legacy migration and a persisted handoff delay of at least twenty
+seconds across stop/start/crash boundaries. The final application SHA-256 is
+`875a2e069339a3d65b6a31ee25fa99a5428a65cd1fc54628a35394308a9cc053`.
+The conventional NSIS installer is built locally and bundles this verified engine. Native Windows 11 validation ran in a disposable, network-disconnected clone
+with no host devices, physical GPU, or graphical frontend. The exact final setup
+installed in interactive session 1 with `/S /NOAUTOSTART /NOSTART`, returned zero,
+and its installed app/engine hashes matched the locally built artifacts. All
+eight native smoke checks passed, followed by all five account smoke checks:
+current-account selection, account-switch preemption plus handoff spacing,
+independent Steam cooldowns, global upload HTTP 429 handling, and no orphan workers.
+Those checks used fake accounts/workers and made no real Steam requests. The
+original gaming VM stayed off and its installation was unchanged.
+
+Omarchy plugin 1.3.0 passed all 98 Python tests, JavaScript model tests, the isolated
+offscreen QML check and all 27 maintained source hashes/modes. A read-only migration
+simulation on the host's real state attributed the existing Steam cooldown to
+its exact old account using the completed invocation's explicit throttle evidence;
+it preserved that deadline and selected the different current account first.
+No private account identifiers or logs are in this repository. The installer
+also holds the Screens Off journal lock during plugin writes and rejects active
+or incomplete display-power transactions; its lock/journal guards have isolated
+regression coverage.
+
+The host's live plugin remains 1.2.0 while Screens Off is active: reloading the
+shell or plugins would unload the display-power controller and may wake monitors.
+Source packaging and isolated validation do not claim live activation. The GPU
+gaming VM remains untouched for this release's checks. New-account real history
+completion and end-to-end Statlocker indexing remain separate acceptance checks.
+
+The following sections retain earlier installer/gameplay acceptance, which is
+not evidence that the new account scheduler has completed live recovery.
 
 ## Windows installer 0.1.1
 

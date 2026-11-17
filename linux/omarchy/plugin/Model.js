@@ -46,18 +46,30 @@ function progressRatio(value) {
 function recovery(value) {
   value = value && typeof value === "object" ? value : {};
   var phases = ["off", "working", "cooldown", "retry", "game", "caught_up", "attention"];
-  var reasons = ["", "rate_limit", "transient", "account_in_use", "auth", "unavailable", "state_store", "settling"];
+  var reasons = ["", "rate_limit", "transient", "account_in_use", "auth", "unavailable", "state_store", "settling", "upload_rate_limit", "legacy_cooldown", "account_metadata"];
   var enabled = value.enabled === true;
   return {enabled: enabled,
     phase: enabled ? (phases.indexOf(value.phase) >= 0 ? value.phase : "attention") : "off",
     reason: reasons.indexOf(value.reason) >= 0 ? value.reason : "unavailable",
     next_at: count(value.next_at, 4102444800),
     skipped: count(value.skipped, 10000000) || 0,
-    repair_required: value.repair_required === true};
+    repair_required: value.repair_required === true,
+    current_account: accountName(value.current_account), active_account: accountName(value.active_account),
+    account_count: count(value.account_count, 128) || 0,
+    accounts: Array.isArray(value.accounts) ? value.accounts.slice(0, 64).map(function(item) {
+      item = item && typeof item === 'object' ? item : {};
+      return {name: accountName(item.name), current: item.current === true,
+        phase: ['working', 'attention', 'caught_up', 'cooldown', 'retry'].indexOf(item.phase) >= 0 ? item.phase : 'attention',
+        next_at: count(item.next_at, 4102444800)};
+    }) : []};
+}
+
+function accountName(value) {
+  return typeof value === "string" ? value.slice(0, 80).replace(/[\x00-\x1f\x7f]/g, "") : "";
 }
 
 function pollInterval(status) {
-  return running(status.live) || running(status.backfill) ? 2000 : 60000;
+  return running(status.live) || running(status.backfill) ? 2000 : 5000;
 }
 
 function shouldPoll(status) {
@@ -72,7 +84,7 @@ function scheduledAttempt(value, now) {
 function parse(text) {
   var result = empty();
   try {
-    var value = JSON.parse(String(text).slice(0, 16384));
+    var value = JSON.parse(String(text).slice(0, 65536));
     var allowed = ["active", "activating", "deactivating", "inactive", "failed", "unavailable"];
     ["live", "backfill"].forEach(function(key) {
       result[key] = allowed.indexOf(value[key]) >= 0 ? value[key] : "unavailable";
@@ -93,8 +105,9 @@ function statusKey(status, hasGame, busy, error) {
   if (error) return "state.error";
   if (running(status.backfill)) return "state.backfill";
   if (running(status.live)) return "state.syncing";
-  if (hasGame && status.live === "failed") return "state.failed";
   var automatic = recovery(status.recovery);
+  if (automatic.enabled && automatic.reason === "upload_rate_limit") return "state.recovery.cooldown";
+  if (hasGame && status.live === "failed") return "state.failed";
   if (automatic.enabled) return "state.recovery." + automatic.phase;
   if (status.live === "failed" || status.backfill === "failed") return "state.failed";
   if (busy) return "state.changing";

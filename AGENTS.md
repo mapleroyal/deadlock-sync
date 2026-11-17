@@ -2,7 +2,7 @@
 
 For installation, read README.md and the relevant platform README, then use the
 release installer. On Windows, the normal user path is the conventional
-`Deadlock-Sync-0.1.1-Setup.exe` wizard: Next, Install, Finish. Do not substitute
+`Deadlock-Sync-0.2.0-Setup.exe` wizard: Next, Install, Finish. Do not substitute
 PowerShell scripts, a source build or an agentic setup flow. It bundles the app,
 runtime and verified ingest engine, runs per user without elevation, and opens
 the enabled tray app at Finish. Fresh installs default to starting at login;
@@ -13,10 +13,19 @@ not a request to compare frameworks. Inspect more upstream source only if the
 pinned release differs or a target-specific problem appears. VALIDATION.md
 distinguishes tests from end-to-end acceptance; preserve that distinction.
 
-The Windows implementation is C# .NET 10 Windows Forms using the official ingest
-binary. Keep policy/log parsing independent of Windows APIs for cheap tests.
+The Windows implementation is C# .NET 10 Windows Forms using the pinned selected-
+account ingest extension from mapleroyal/deadlock-sync-engine. Keep policy/log
+parsing independent of Windows APIs for cheap tests. Backfill always supplies
+`--account-id` and never falls back to all-account mode. Keep Steam cooldowns,
+progress and account login errors separate, while upload-endpoint limits remain
+global. Preserve current-account priority, game priority and cross-worker pacing.
 Build on a development host and validate in the target Windows account; keep
 SDKs off gaming-only machines. Never run the Linux installer on Windows.
+Build locally. GitHub hosts source and finished release assets only; do not add
+CI/CD workflows or remote build pipelines. Keep GitHub Actions disabled.
+Windows validation must be headless while the owner is away or using Screens
+Off. Do not start the GPU gaming VM, wake a physical monitor or change GPU
+lighting to test this app. Prefer an isolated virtual-display environment.
 The native NSIS installer lives in `windows/installer/`; build it with
 `tools/build-setup.py` and package releases with `tools/package.py`. See the
 Windows README for the exact inputs. Keep installation offline-capable, use

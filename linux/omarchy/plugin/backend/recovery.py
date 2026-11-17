@@ -118,9 +118,13 @@ def messages(records):
 
 def analyse(records):
     """Classify only known upstream messages; expose no account/match IDs or text."""
-    cause, timestamp, skipped, limited_at = '', 0, 0, 0
+    cause, timestamp, skipped, limited_at, endpoint_limited_at = '', 0, 0, 0, 0
+    endpoint_rate_limited = False
     for message, stamp in messages(records):
         current = ''
+        if re.search(r'(?:HTTP|status|StatusCode|status_code)[^\n]{0,80}\b429\b', message, re.IGNORECASE):
+            endpoint_limited_at = max(endpoint_limited_at, stamp)
+            endpoint_rate_limited = True
         if ('gc: store unavailable, not tracking salt attempts:' in message or
                 'GC store error' in message):
             current = 'state_store'
@@ -144,7 +148,7 @@ def analyse(records):
             limited_at = max(limited_at, stamp)
         if current and PRIORITY[current] >= PRIORITY[cause]:
             cause, timestamp = current, stamp
-    return {'cause': cause, 'at': timestamp, 'limited_at': limited_at, 'skipped': skipped,
+    return {'cause': cause, 'at': timestamp, 'limited_at': limited_at, 'endpoint_limited_at': endpoint_limited_at, 'endpoint_rate_limited': endpoint_rate_limited, 'skipped': skipped,
             'progress': parse_records(records, 'backfill')}
 
 
@@ -152,6 +156,8 @@ def merge_details(stored, fresh):
     """Re-read after journal flush without weakening any known safety evidence."""
     result = dict(fresh if PRIORITY[fresh['cause']] >= PRIORITY[stored['cause']] else stored)
     result['limited_at'] = max(stored['limited_at'], fresh['limited_at'])
+    result['endpoint_limited_at'] = max(stored.get('endpoint_limited_at', 0), fresh.get('endpoint_limited_at', 0))
+    result['endpoint_rate_limited'] = stored.get('endpoint_rate_limited', False) or fresh.get('endpoint_rate_limited', False)
     result['skipped'] = max(stored['skipped'], fresh['skipped'])
     result['progress'] = (fresh['progress'] if (fresh['progress'].get('updated_at') or 0) >=
                           (stored['progress'].get('updated_at') or 0) else stored['progress'])
@@ -253,11 +259,14 @@ def read_completion(path):
             return {'corrupt': True}
         clean = analyse([])
         clean['cause'] = details['cause']
-        for key, limit in (('at', 4102444800), ('limited_at', 4102444800), ('skipped', COUNT_LIMIT)):
-            number = details.get(key)
+        for key, limit in (('at', 4102444800), ('limited_at', 4102444800), ('endpoint_limited_at', 4102444800), ('skipped', COUNT_LIMIT)):
+            number = details.get(key, 0) if key == 'endpoint_limited_at' else details.get(key)
             if not isinstance(number, int) or isinstance(number, bool) or not 0 <= number <= limit:
                 return {'corrupt': True}
             clean[key] = number
+        if not isinstance(details.get('endpoint_rate_limited', False), bool):
+            return {'corrupt': True}
+        clean['endpoint_rate_limited'] = details.get('endpoint_rate_limited', False)
         progress = details.get('progress')
         if not isinstance(progress, dict):
             return {'corrupt': True}
@@ -271,6 +280,10 @@ def read_completion(path):
         if isinstance(stamp, int) and not isinstance(stamp, bool) and 0 < stamp <= 4102444800:
             clean['progress']['updated_at'] = stamp
         value['details'] = clean
+        identifier = value.get('account_id', '')
+        if identifier and (not re.fullmatch(r'[1-9][0-9]{0,9}', str(identifier)) or int(identifier) > 4294967295):
+            return {'corrupt': True}
+        value['account_id'] = identifier
         return value
     except FileNotFoundError:
         return None
@@ -278,7 +291,7 @@ def read_completion(path):
         return {'corrupt': True}
 
 
-def record_completion(path, environment, now, reader=read_journal):
+def record_completion(path, environment, now, reader=read_journal, account_id=''):
     """Lock-free unit hook, safe when the scheduler waits for systemctl stop."""
     invocation = environment.get('INVOCATION_ID', '')
     if not INVOCATION.fullmatch(invocation):
@@ -287,7 +300,7 @@ def record_completion(path, environment, now, reader=read_journal):
     status = environment.get('EXIT_STATUS', '')
     value = {'invocation': invocation, 'state': 'inactive',
              'result': environment.get('SERVICE_RESULT', 'resources'), 'code': code,
-             'exit_status': int(status) if status.isdigit() else 1, 'finished_at': now}
+             'exit_status': int(status) if status.isdigit() else 1, 'finished_at': now, 'account_id': account_id}
     try:
         value['details'] = analyse(reader(invocation))
     except (OSError, ValueError, subprocess.SubprocessError):

@@ -6,7 +6,7 @@ throttles it. The tray shows progress and the next planned attempt.
 
 ## Install
 
-1. Download [Deadlock-Sync-0.1.1-Setup.exe](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.1.1/Deadlock-Sync-0.1.1-Setup.exe).
+1. Download [Deadlock-Sync-0.2.0-Setup.exe](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.2.0/Deadlock-Sync-0.2.0-Setup.exe).
 2. Double-click it, then choose **Next → Install → Finish**. Leave **Start
    Deadlock Sync** checked on the last page.
 3. The app opens its status window and places a gamepad icon near the Windows
@@ -32,8 +32,9 @@ form and does not collect or store your password. If Steam has not saved a usabl
 session, the app shows an attention message; sign in again in Steam, then choose
 **Enable syncing**. Live memory syncing can still work without that saved session.
 
-Recovery uses every decryptable remembered Steam account, so review saved
-accounts in Steam on a shared or multi-account computer. Keep your Steam launch
+Recovery prioritizes the current Steam account, then works through other usable
+remembered accounts one at a time. Switching accounts updates that priority
+automatically. Review saved accounts in Steam on a shared computer. Keep your Steam launch
 options unchanged. Do not also run the upstream GUI's always-running watcher or
 run recovery on two computers for the same Steam account at once.
 
@@ -50,9 +51,16 @@ it visible.
   if starting with Windows is enabled.
 
 Game exit stops the live reader. Enabled history recovery stays on, with at least
-a 60-second settling period before starting. During a Steam cooldown, the icon
-remains and the uploader stops. The scheduled retry is normally 24 hours plus a
-small jitter after throttling; it is not a guaranteed Steam reset time.
+a 60-second settling period before starting. A Steam cooldown pauses only that
+account; another eligible account can continue. The scheduled retry is normally
+24 hours plus a small jitter after throttling; it is not a guaranteed Steam reset
+time. An upload-service-wide limit pauses uploads for all accounts. The panel
+shows account progress and waiting/attention status. Switching workers retains
+at least 20 seconds of request spacing.
+
+Each account's history starts with its newest page and works backward. An upgrade
+from an older version preserves any cooldown whose account cannot be established
+as a temporary shared wait; it never guesses or resets that deadline.
 
 Processed matches and accepted uploads are separate counters. Old unavailable
 matches and remote indexing delays mean complete Statlocker coverage cannot be
@@ -87,18 +95,23 @@ Python 3.11 or newer, and NSIS with its standard includes and plugins. The
 Windows-targeted build also works on Linux. Only the resulting setup executable
 needs to reach the gaming PC.
 
+Builds run locally; this repository has no CI/CD build pipeline. GitHub hosts
+the source and finished downloads. Use a headless Windows environment for native
+automation; do not wake a physical monitor or start a GPU passthrough gaming VM
+for unattended app checks.
+
 From the repository root:
 
 ```text
 dotnet run --project windows/DeadlockSync.Tests -c Release
 dotnet publish windows/DeadlockSync -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false -o publish/windows-x64
 python tools/build-setup.py --windows-publish publish/windows-x64 --dotnet-notices path/to/dotnet-notices --output dist
-python tools/package.py --version 0.1.1 --windows-installer dist/Deadlock-Sync-0.1.1-Setup.exe --output dist
+python tools/package.py --version 0.2.0 --windows-installer dist/Deadlock-Sync-0.2.0-Setup.exe --output dist
 ```
 
 `--dotnet-notices` names a directory containing the matching Microsoft .NET
 `LICENSE.txt` and `ThirdPartyNotices.txt`. All three build-setup arguments shown
-above are required. The builder downloads the pinned official ingest executable
+above are required. The builder downloads the pinned ingest extension executable
 and MIT license by default and verifies their hashes. For cached inputs, add
 `--ingest path/to/deadlock-api-ingest.exe` and
 `--ingest-license path/to/INGEST-LICENSE.txt`; the same verification still applies.
@@ -132,7 +145,14 @@ $report = Join-Path $env:TEMP 'deadlock-sync-smoke.json'
 $app = Join-Path $env:LOCALAPPDATA 'DeadlockSync\app\DeadlockSync.exe'
 Start-Process $app -ArgumentList "--smoke-test `"$report`"" -Wait
 Get-Content -LiteralPath $report
+$accounts = Join-Path $env:TEMP 'deadlock-sync-account-smoke.json'
+Start-Process $app -ArgumentList "--account-smoke-test `"$accounts`"" -Wait
+Get-Content -LiteralPath $accounts
 ```
+
+The account smoke test uses isolated fake accounts/workers and takes about one
+minute. It checks current-account priority, safe switch preemption, separate Steam
+limits, global upload limits and worker cleanup, without real Steam calls.
 
 The smoke checks are separate from installer, gameplay and Statlocker acceptance.
 See [VALIDATION.md](https://github.com/mapleroyal/deadlock-sync/blob/main/VALIDATION.md)

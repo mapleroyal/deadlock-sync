@@ -1,17 +1,22 @@
 {
   "verified_on": "2026-11-16",
-  "repository": "https://github.com/deadlock-api/deadlock-api-ingest",
-  "version": "v0.4.8",
-  "commit": "ef1882306163826809cb2768a39b4c4f8b258545",
+  "repository": "https://github.com/mapleroyal/deadlock-sync-engine",
+  "version": "v0.4.8-sync.1",
+  "commit": "0ba1f8cb9785c39029aa9d99716f2ef02d61e32b",
   "target": "windows-x86_64",
   "license": {
     "url": "https://raw.githubusercontent.com/deadlock-api/deadlock-api-ingest/v0.4.8/LICENSE",
     "sha256": "db8dd69abbbf964e53908baddba723e32934f26edab06f76aaf4d40f6790a0ea"
   },
   "asset": {
-    "name": "deadlock-api-ingest-windows-latest.exe",
-    "url": "https://github.com/deadlock-api/deadlock-api-ingest/releases/download/v0.4.8/deadlock-api-ingest-windows-latest.exe",
-    "sha256": "d0e2a772ffc075713cc21759cb0a3b9e378a3235e59fc25cc7ed5b5d1f884464",
-    "size": 32569344
+    "name": "deadlock-api-ingest-windows-x64.exe",
+    "url": "https://github.com/mapleroyal/deadlock-sync-engine/releases/download/v0.4.8-sync.1/deadlock-api-ingest-windows-x64.exe",
+    "sha256": "b75b8e149a0ae51bf6530c7e43b22b7fedc8e4ae67eed6e0cca477715b0153e6",
+    "size": 32462336
+  },
+  "base_upstream": {
+    "repository": "https://github.com/deadlock-api/deadlock-api-ingest",
+    "version": "v0.4.8",
+    "commit": "ef1882306163826809cb2768a39b4c4f8b258545"
   }
 }

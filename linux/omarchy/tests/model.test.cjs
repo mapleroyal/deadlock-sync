@@ -33,7 +33,7 @@ const cooldown = m.parse(JSON.stringify({live:'inactive',backfill:'failed',recov
 }}));
 assert.equal(m.statusKey(cooldown,false,false,''), 'state.recovery.cooldown', 'expected cooldown is not a failed service display');
 assert.equal(m.shouldPoll(cooldown),true);
-assert.equal(m.pollInterval(cooldown),60000,'waiting mode uses slow local checks');
+assert.equal(m.pollInterval(cooldown),5000,'waiting mode notices Steam account changes promptly');
 assert.equal(m.pollInterval({...cooldown,backfill:'activating'}),2000);
 assert.equal(m.statusKey({...cooldown,live:'active'},true,false,''),'state.syncing','live sync takes display priority');
 assert.equal(m.statusKey({...cooldown,live:'failed'},true,false,''),'state.failed','live failure is not hidden by automatic mode');
@@ -56,3 +56,10 @@ for (const phase of ['off','working','caught_up','attention']) {
 }
 assert.equal(m.scheduledAttempt({...cooldown.recovery,phase:'game'},1794768486),true,'queued game can retain a future cooldown');
 console.log('Model tests passed');
+
+const accountView = m.recovery({enabled:true, current_account:'<img src=https://bad>', active_account:'other', account_count:2,
+  accounts:[{name:'<b>Test</b>', current:true, phase:'cooldown', next_at:2000000000}]});
+assert.equal(accountView.current_account,'<img src=https://bad>','account names remain plain text, not evaluated markup');
+assert.equal(accountView.accounts[0].current,true);
+assert.equal(m.recovery({accounts:[{name:42,current:'true',phase:'invalid',next_at:Infinity}]}).accounts[0].phase,'attention');
+assert.equal(m.recovery({current_account:'x'.repeat(400)}).current_account.length,80);

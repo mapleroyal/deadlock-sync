@@ -55,7 +55,8 @@ Item {
   Component.onCompleted: { ready = true; sync(); }
 
   // The existing shell schedules recovery. Waiting checks are local and slow;
-  // the backend starts a single pass only after its persisted retry deadline.
+  // account metadata changes are noticed promptly without an extra resident process.
+  // The backend starts one eligible account after its persisted retry deadline.
   // Quitting automatic mode disables this timer when both jobs are stopped.
   Timer {
     interval: Model.pollInterval(root.status)

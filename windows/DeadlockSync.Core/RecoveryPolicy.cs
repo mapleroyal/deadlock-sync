@@ -1,13 +1,13 @@
 namespace DeadlockSync.Core;
 
-/// <summary>Pure policy. Callers inject Unix time and, for tests, inclusive random bounds.</summary>
+/// <summary>Recovery outcomes and legacy lifecycle primitives. Multi-account scheduling uses AccountPolicy.</summary>
 public static class RecoveryPolicy
 {
     public const long Day = 86_400;
     public const long Grace = 60;
     public static bool IsBlocked(string reason) => reason is "auth" or "state_store" or "unavailable";
-    private static long HardDeadline(SyncState state) => Math.Max(state.HardUntilUtc, state.UploadHardUntilUtc);
-    public static long Deadline(SyncState state) => Math.Max(state.NextAtUtc, HardDeadline(state));
+    private static long HardDeadline(RecoveryState state) => Math.Max(state.HardUntilUtc, state.UploadHardUntilUtc);
+    public static long Deadline(RecoveryState state) => Math.Max(state.NextAtUtc, HardDeadline(state));
     private static int Jitter(Func<int, int, int>? random, int maximum) =>
         Math.Clamp(random?.Invoke(0, maximum) ?? Random.Shared.Next(maximum + 1), 0, maximum);
 
@@ -62,12 +62,12 @@ public static class RecoveryPolicy
         state.Enabled && state.Pending && !state.Corrupt && !IsBlocked(state.Reason)
         && gameIdentity.Length == 0 && now >= Deadline(state);
 
-    public static void Reserve(SyncState state, long now)
+    public static void Reserve(RecoveryState state, long now)
     {
         state.NextAtUtc = Math.Max(HardDeadline(state), now + 300);
     }
 
-    private static void PreserveThrottle(SyncState state, RunEvidence evidence, long now,
+    private static void PreserveThrottle(RecoveryState state, RunEvidence evidence, long now,
         Func<int, int, int>? random)
     {
         if (evidence.LimitedAtUtc > 0 || evidence.Cause == "rate_limit" && !evidence.EndpointRateLimited)
@@ -83,7 +83,7 @@ public static class RecoveryPolicy
     }
 
     /// <summary>Persist after each log batch, so a crash cannot erase an observed throttle or storage failure.</summary>
-    public static void ObserveEvidence(SyncState state, RunEvidence evidence, long now,
+    public static void ObserveEvidence(RecoveryState state, RunEvidence evidence, long now,
         Func<int, int, int>? random = null)
     {
         state.Progress = evidence.Progress.Copy();
@@ -103,7 +103,7 @@ public static class RecoveryPolicy
         if (state.Corrupt) { state.Reason = "state_store"; state.Pending = true; }
     }
 
-    public static void Retry(SyncState state, long now, string reason = "transient",
+    public static void Retry(RecoveryState state, long now, string reason = "transient",
         Func<int, int, int>? random = null)
     {
         state.Pending = true;
@@ -115,7 +115,7 @@ public static class RecoveryPolicy
         if (state.Corrupt) { state.Reason = "state_store"; state.NextAtUtc = 0; }
     }
 
-    public static bool Finish(SyncState state, string runId, int exitCode, RunEvidence evidence,
+    public static bool Finish(RecoveryState state, string runId, int exitCode, RunEvidence evidence,
         long now, bool deliberate = false, Func<int, int, int>? random = null)
     {
         if (string.IsNullOrWhiteSpace(runId) || runId.Length > 128 || runId == state.ProcessedRunId)

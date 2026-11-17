@@ -9,6 +9,8 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Contains("--fake-worker")) return FakeWorker(args);
+        string? accountSmoke = Option(args, "--account-smoke-test");
+        if (accountSmoke is not null) return AccountSmoke.RunAsync(accountSmoke).GetAwaiter().GetResult();
         string? smoke = Option(args, "--smoke-test");
         if (smoke is not null) return Smoke.RunAsync(smoke).GetAwaiter().GetResult();
         string testRoot = Option(args, "--test-root") is { } path ? Path.GetFullPath(path) : "";
@@ -69,10 +71,11 @@ internal static class Program
         // Only invoked by explicit --smoke-test / --test-root. Never touches Steam.
         string mode = Option(args, "--mode") ?? "backfill";
         string fixture = Option(args, "--fixture") ?? "hold";
+        string account = Option(args, "--account-id") is { Length: > 0 } id ? id : "123";
         if (mode == "live") Console.WriteLine("memory: reading the game (pid 123)");
         else
         {
-            Console.WriteLine("gc: account 123 has 10 match(es) in history, 3 missing salts (~20s each)");
+            Console.WriteLine($"gc: account {account} has 10 match(es) in history, 3 missing salts (~20s each)");
             Console.WriteLine("gc: ingested match 456 (1/3)");
         }
         Console.Out.Flush();
@@ -85,7 +88,7 @@ internal static class Program
         }
         if (fixture == "throttle")
         {
-            Console.Error.WriteLine("gc: account 123 was rate-limited by Steam");
+            Console.Error.WriteLine($"gc: account {account} was rate-limited by Steam");
             Console.Error.WriteLine("Steam rate limit reached. Run this again on another day to fetch the remaining matches.");
             return 1;
         }
@@ -94,7 +97,17 @@ internal static class Program
             Console.Error.WriteLine("gc: store unavailable, not tracking salt attempts: synthetic failure");
             Console.Error.Flush();
         }
-        Thread.Sleep(TimeSpan.FromMinutes(10));
+        string? trigger = Option(args, "--test-trigger");
+        for (int i = 0; i < 6000; i++)
+        {
+            string signal = "";
+            try { if (trigger is not null && File.Exists(trigger)) signal = File.ReadAllText(trigger).Trim(); }
+            catch (IOException) { }
+            if (signal == "steam")
+            { Console.Error.WriteLine($"gc: account {account} was rate-limited by Steam"); return 1; }
+            if (signal == "upload") { Console.Error.WriteLine("HTTP 429 Too Many Requests"); return 1; }
+            Thread.Sleep(100);
+        }
         return 0;
     }
 }

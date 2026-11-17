@@ -2,31 +2,43 @@
   "files": [
     {
       "path": "install.py",
-      "sha256": "3cbd4e475d76f484c8bf1724544342be957f346e904c6d2f09c5476b024ec9b6",
+      "sha256": "80acf19be052482399357f4e8424a12c8eb0b76bb5bea5e0e8937222c6e1fca7",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "plugin/BarWidget.qml",
-      "sha256": "364d7514d5702c026ea5736546311896ec08355e34e4168d10361b6020b7b374",
+      "sha256": "c55eb93716eaa69078a775825f73d206cb6ddc28ab6b1158a36dcf8de93c3f2d",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "plugin/Model.js",
-      "sha256": "3f03ff5dd852f2c17c683237eb7f041816c8ecc80712e280bb0d61a0e8953242",
+      "sha256": "d0568b432ad8cb7376e2c21c6163c512473c277e2536a20fe20a41db0678b52a",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "plugin/Service.qml",
-      "sha256": "9ff82f9e307fe849ec8798f7a8f6bc6dd4da9f20ab57886f2cc05afa26c8123c",
+      "sha256": "925aafc7479b07fd98aa817a87116c899d1514fc861947cf874346817799cc6a",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "plugin/backend/account_state.py",
+      "sha256": "f7fdfc5d6f1fc0af876e2877cc6fa709bab9f5b4eb37c4155a192140d06e74cb",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "plugin/backend/accounts.py",
+      "sha256": "2103952d54b97b160478f48e443b274518fa64a65cfad9cfecccf2c3c3e68223",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "plugin/backend/control.py",
-      "sha256": "162efdeb1d8c07d9f5c7c83f2eace7dc872fd4955a0e1aa68e4443ed4ce92f7e",
+      "sha256": "747ed4143da30cc29bc4a69f90f996a27a07330f5a5288c2d2d08523632b0f34",
       "mode": "0o644",
       "executable": false
     },
@@ -38,19 +50,19 @@
     },
     {
       "path": "plugin/backend/recovery.py",
-      "sha256": "eed1b67a8e80d718b012733b1b2ff1fec5ee23f20c22d6f3a9c9b0a8d243dd14",
+      "sha256": "6b9244601b0e2051f0559fd901bcdfe3173b861f942a249d2653958e1f9a06cd",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "plugin/i18n/en.json",
-      "sha256": "209e168109348eb9dc2d70d676d4addaaceebe8ee4696a4e25e00a80222b83cb",
+      "sha256": "14cb4cd90fb4993e28c116910fb872c750df2698b93d44721726801079e4b262",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "plugin/manifest.json",
-      "sha256": "e92a9c4dac6b42b151079a3285a2e669840941e5229f85fcc63b117fbe75babb",
+      "sha256": "ebd16a90f376ca9076124d1084f8a95dcb7ff8a79c15acf1eb1b7d06757d7a14",
       "mode": "0o644",
       "executable": false
     },
@@ -62,7 +74,7 @@
     },
     {
       "path": "templates/deadlock-api-ingest-backfill.service",
-      "sha256": "36dc9e2f6b4695e4298d7eebf9ac2481a4a8764c2563b648980a175f543e4297",
+      "sha256": "d6c0b227dc1b7619845886ec938b2a83a455d399b785aa6f7786d31f874bf90b",
       "mode": "0o644",
       "executable": false
     },
@@ -80,7 +92,7 @@
     },
     {
       "path": "tests/model.test.cjs",
-      "sha256": "3a7bbbbff20b882522ca139dd1d94a09990fe8985e13c364c0f32419aa51e972",
+      "sha256": "e5bf13f3fdd69eb50990b5b8120e9e661250bfc40b5398e4a8fbf3fa0df495f2",
       "mode": "0o644",
       "executable": false
     },
@@ -98,19 +110,25 @@
     },
     {
       "path": "tests/qml/shell.qml",
-      "sha256": "c849fe2047e224988b74600a49c2add0cbe8a21b879f9ea1fe70d773f0805a04",
+      "sha256": "1b5d3054fee447ab2e02abb0a2bb02d9def9b9c93898fdb4774b84b3313e0fa0",
+      "mode": "0o644",
+      "executable": false
+    },
+    {
+      "path": "tests/test_accounts.py",
+      "sha256": "c97d43623f04a53d70ad3e746b621f3dabbb22bf26d3d5e7a5127c75538dc986",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "tests/test_control.py",
-      "sha256": "44b975a761f12e489aa5ca56857d44180ab2063e4fe604eea934eb2489196472",
+      "sha256": "80def34e04d144d69248a72ac314225b542ea375150e71b482d8939666096dbd",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "tests/test_install.py",
-      "sha256": "0e4011e2a012cd9d15186c7a0f5242948d153beeb227e0c8c5159c9b4c2cb83c",
+      "sha256": "6f0618fa245426233df58c482815eaa60b048fffb9737511af7d7a750a8eeb19",
       "mode": "0o644",
       "executable": false
     },
@@ -134,7 +152,7 @@
     },
     {
       "path": "upstream.json",
-      "sha256": "61caaecb3986442f3249d7b534518522b43ed2578bf585cb84a48995f19a5ede",
+      "sha256": "b1613fcc6f4c540462f9fac7295c36b0c335cdd0f0afccfb56ad4247548101b9",
       "mode": "0o644",
       "executable": false
     },

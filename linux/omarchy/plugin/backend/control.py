@@ -8,14 +8,18 @@ import re
 import subprocess
 import sys
 import time
+import uuid
 
 sys.dont_write_bytecode = True
 from progress import empty as empty_progress, read_journal, snapshot
 import recovery
+import accounts
+import account_state
 
 LIVE = 'deadlock-api-ingest.service'
 BACKFILL = 'deadlock-api-ingest-backfill.service'
 RUNNING = {'active', 'activating', 'deactivating'}
+HANDOFF = 21  # Whole-second persistence still guarantees at least 20 real seconds.
 
 
 def systemctl(*args):
@@ -88,6 +92,8 @@ class Controller:
         self.marker = self.runtime / 'deadlock-api-ingest-bar.status'
         self.persistent = Path(persistent) if persistent else recovery.state_path()
         self.clock = clock or time.time
+        self.request_path = self.persistent.with_name('request.json')
+        self.running_path = self.persistent.with_name('running.json')
 
     def read(self):
         try:
@@ -97,10 +103,33 @@ class Controller:
             return {'session': '', 'paused': False}
 
     def save(self, state):
-        temporary = self.state_path.with_suffix('.tmp')
-        temporary.write_text(json.dumps(state))
-        temporary.chmod(0o600)
-        temporary.replace(self.state_path)
+        recovery.save(self.state_path, state)
+
+    def logs(self, invocation):
+        if not recovery.INVOCATION.fullmatch(str(invocation)):
+            return []
+        try:
+            return read_journal(invocation)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return []
+
+    def bound_account(self, invocation, completion=None):
+        if completion and completion.get('invocation') == invocation:
+            identifier = completion.get('account_id', '')
+            if accounts.account_id(identifier):
+                return identifier
+        try:
+            running = account_state.read_json(self.running_path, 4096)
+            if running.get('invocation') == invocation:
+                return accounts.account_id(running.get('account_id', ''))
+        except (OSError, ValueError, TypeError):
+            pass
+        return ''
+
+    def endpoint_evidence(self, value, details, now):
+        if details.get('endpoint_rate_limited'):
+            stamp = details.get('endpoint_limited_at') or now
+            value['global_until'] = max(value['global_until'], min(now, stamp) + recovery.DAY + 300)
 
     def finish(self, value, unit, now, deliberate=False):
         invocation = unit.get('invocation', '')
@@ -109,38 +138,76 @@ class Controller:
         completion = recovery.read_completion(recovery.completion_path(self.persistent))
         details = None
         if completion and completion.get('corrupt'):
-            value.update(corrupt=True, reason='state_store', pending=True)
+            value['corrupt'] = True
         elif completion and completion['invocation'] == invocation:
             details = completion.get('details')
+        records = self.logs(invocation)
+        details = recovery.merge_details(details, recovery.analyse(records)) if details is not None else recovery.analyse(records)
+        self.endpoint_evidence(value, details, now)
+        identifier = self.bound_account(invocation, completion) or value['active']
+        if not identifier:
+            # Legacy unscoped runs may have touched several accounts. Only explicit
+            # throttle markers can assign their cooldown; never blame the current login.
+            limited = account_state.attributed_accounts(records)
+            for account in limited:
+                record = account_state.ensure(value, account)
+                recovery.finish(record, unit, now, records, deliberate=deliberate, details=details)
+            if not limited and (details['limited_at'] or details['cause'] == 'rate_limit'):
+                stamp = details['limited_at'] or now
+                value['legacy_until'] = max(value['legacy_until'], min(now, stamp) + recovery.DAY + 300)
+        else:
+            record = account_state.ensure(value, identifier)
+            recovery.finish(record, unit, now, records, deliberate=deliberate, details=details)
+            if deliberate and not details['cause'] and not record['corrupt']:
+                # An observed intentional stop completes the crash reservation.
+                # The shared handoff gap and game settling gate govern the next pass.
+                record.update(next_at=record['hard_until'], reason='rate_limit' if record['hard_until'] > now else '')
+            if details['cause'] == 'state_store':
+                value['attention'] = 'state_store'
+        value['processed'] = invocation
+        value['active'] = ''
+        self.request_path.unlink(missing_ok=True)
+        value['spacing_until'] = max(value['spacing_until'], now + HANDOFF)
+
+    def request_pending(self, value, now):
         try:
-            records = read_journal(invocation)
-        except (OSError, ValueError, subprocess.SubprocessError):
-            records = []
-        if details is not None:
-            details = recovery.merge_details(details, recovery.analyse(records))
-        recovery.finish(value, unit, now, records, deliberate=deliberate, details=details)
+            request = account_state.read_json(self.request_path, 4096)
+            return (value['active'] and request.get('account_id') == value['active'] and
+                    account_state.number(request.get('created_at')) and 0 <= now - request['created_at'] <= 30 and
+                    recovery.INVOCATION.fullmatch(str(request.get('token', ''))) is not None)
+        except (OSError, ValueError, TypeError):
+            return False
 
     def stop_backfill(self, value, units, now):
         previous = units.get(BACKFILL, {})
-        if previous.get('state') not in RUNNING:
+        if previous.get('state') not in RUNNING and not value['active']:
             return units
+        self.request_path.unlink(missing_ok=True)
         systemctl('stop', BACKFILL)
         units = read_units()
         stopped = dict(units.get(BACKFILL, {}))
         stopped['invocation'] = stopped.get('invocation') or previous.get('invocation', '')
+        now = max(now, int(self.clock()))
         self.finish(value, stopped, now, deliberate=True)
+        if value['active']:
+            record = value['accounts'][value['active']]
+            record['pending'] = True
+            record['next_at'] = max(record['next_at'], record['hard_until'], now + recovery.GRACE)
+            value['active'] = ''
+            value['spacing_until'] = max(value['spacing_until'], now + HANDOFF)
         return units
 
-    def result(self, state, value, units, session, now):
+    def result(self, state, value, metadata, units, session, now):
         active_progress = snapshot(units, self.directory)
         if not any(unit.get('state') in RUNNING for unit in units.values()):
-            active_progress = value['progress']
+            identifier = account_state.focus(value, metadata, now)
+            active_progress = value['accounts'].get(identifier, {}).get('progress', empty_progress())
         return {'live': units.get(LIVE, {}).get('state', 'unavailable'),
                 'backfill': units.get(BACKFILL, {}).get('state', 'unavailable'),
                 'paused': state['paused'] and state['session'] == session,
                 'memory': sum(unit.get('memory', 0) for unit in units.values()),
                 'progress': active_progress,
-                'recovery': recovery.view(value, units, session, now)}
+                'recovery': account_state.view(value, metadata, units, session, now)}
 
     def execute(self, action, session):
         if session and not re.fullmatch(r'[a-zA-Z0-9:,_-]{1,256}', session):
@@ -150,32 +217,43 @@ class Controller:
         with (self.directory / 'control.lock').open('a') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             now = int(self.clock())
-            state, value, units = self.read(), recovery.read(self.persistent), read_units()
+            state, value, units = self.read(), account_state.read(self.persistent), read_units()
             old_state, old_value = dict(state), json.loads(json.dumps(value))
+            metadata = accounts.discover()
+            if action == 'status':
+                return self.result(state, value, metadata, units, session, now)
             completion = recovery.read_completion(recovery.completion_path(self.persistent))
             if completion and completion.get('corrupt'):
                 if not value['corrupt']:
                     value['enabled'] = True
-                value.update(corrupt=True, reason='state_store', pending=True)
-            if action == 'status':
-                return self.result(state, value, units, session, now)
-            # Idle disabled mode has no recurring process scan. Active mode checks
-            # the actual game as well as its window, including CLI enable calls.
+                value['corrupt'] = True
+            legacy = value.get('legacy')
+            if legacy is not None:
+                records = self.logs(legacy['processed'])
+                self.endpoint_evidence(value, recovery.analyse(records), now)
+                account_state.migrate(value, now, records)
+            account_state.reconcile(value, metadata)
             if (session or state['session'] or value['enabled'] or action in {'enable', 'resume'} or
                     any(unit.get('state') in RUNNING for unit in units.values())):
                 session = game_session() or session
             backfill = units.get(BACKFILL, {})
             if backfill.get('state') not in RUNNING:
-                completion = recovery.read_completion(recovery.completion_path(self.persistent))
                 if completion and not completion.get('corrupt') and (not backfill.get('invocation') or completion['invocation'] == backfill.get('invocation')):
                     backfill = completion
                 self.finish(value, backfill, now)
+                if value['active'] and not self.request_pending(value, now):
+                    # A previous worker vanished across crash/boot without a completion.
+                    # Its last actual request time is unknown, so reserve a fresh handoff gap.
+                    recovery.retry(value['accounts'][value['active']], now)
+                    value['active'] = ''
+                    value['spacing_until'] = max(value['spacing_until'], now + HANDOFF)
+                    self.request_path.unlink(missing_ok=True)
             if action == 'pause':
                 value['enabled'] = False
                 state = {'session': session, 'paused': bool(session)}
-                # Save disabled intent before blocking stop commands.
-                recovery.save(self.persistent, value)
+                account_state.save(self.persistent, value)
                 self.save(state)
+                self.request_path.unlink(missing_ok=True)
                 units = self.stop_backfill(value, units, now)
                 systemctl('stop', LIVE)
                 units = read_units()
@@ -186,29 +264,49 @@ class Controller:
             else:
                 if action in {'enable', 'resume'}:
                     value['enabled'] = True
-                    if value['reason'] in {'auth', 'state_store'} and not value['corrupt']:
-                        value.update(reason='', pending=True, next_at=max(now, value['hard_until']))
+                    if value['attention'] == 'state_store' and not value['corrupt']:
+                        value['attention'] = ''
+                        for item in value['accounts'].values():
+                            if item['reason'] == 'state_store' and not item['corrupt']:
+                                item.update(reason='', pending=True, next_at=max(now, item['hard_until']))
+                    current = value['accounts'].get(value['current'])
+                    if current and current['reason'] in {'auth', 'unavailable'} and not current['corrupt']:
+                        current.update(reason='', pending=True, next_at=max(now, current['hard_until']))
                     state['paused'] = False
                 new_game = bool(session) and session != state['session']
                 ended_game = not session and bool(state['session'])
                 if new_game:
                     state = {'session': session, 'paused': False}
-                    value.update(enabled=True, pending=True)
+                    value['enabled'] = True
+                    if value['current']:
+                        account_state.ensure(value, value['current'])['pending'] = True
                 if ended_game:
                     state = {'session': '', 'paused': False}
-                    if value['enabled'] and value['reason'] not in recovery.BLOCKED:
-                        value['next_at'] = max(value['next_at'], value['hard_until'], now + recovery.GRACE)
-                        if value['hard_until'] <= now:
-                            value['reason'] = 'settling'
-                # Persist intent/cooldown before any service start.
-                if value != old_value:
-                    recovery.save(self.persistent, value)
+                    value['settling_until'] = max(value['settling_until'], now + recovery.GRACE)
+                # Consume endpoint evidence from either mode before making decisions.
+                for name in (LIVE, BACKFILL):
+                    unit = units.get(name, {})
+                    if unit.get('state') in RUNNING or (name == LIVE and unit.get('invocation') and unit.get('invocation') != value['live_processed']):
+                        details = recovery.analyse(self.logs(unit.get('invocation', '')))
+                        self.endpoint_evidence(value, details, now)
+                        if name == LIVE and unit.get('state') not in RUNNING:
+                            value['live_processed'] = unit.get('invocation', '')
+                        if name == BACKFILL and details['cause'] == 'state_store':
+                            value['attention'] = 'state_store'
                 if state != old_state:
                     self.save(state)
-                if session:
+                account_state.save(self.persistent, value) if value != old_value else None
+                if value['global_until'] > now:
+                    value['live_upload_wait'] = value['live_upload_wait'] or bool(session)
+                    units = self.stop_backfill(value, units, now)
+                    if units.get(LIVE, {}).get('state') in RUNNING:
+                        systemctl('stop', LIVE)
+                        units = read_units()
+                elif session:
                     units = self.stop_backfill(value, units, now)
                     live = units.get(LIVE, {}).get('state')
-                    if not state['paused'] and live not in RUNNING and (new_game or action in {'enable', 'resume'}):
+                    if not state['paused'] and live not in RUNNING and (new_game or action in {'enable', 'resume'} or value['live_upload_wait']):
+                        value['live_upload_wait'] = False
                         if live == 'failed':
                             systemctl('reset-failed', LIVE)
                         systemctl('start', LIVE)
@@ -217,16 +315,15 @@ class Controller:
                     if units.get(LIVE, {}).get('state') in RUNNING:
                         systemctl('stop', LIVE)
                         units = read_units()
-                    current = snapshot(units, self.directory)
-                    if current.get('issue') == 'state_store' and units.get(BACKFILL, {}).get('state') in RUNNING:
+                    running = units.get(BACKFILL, {}).get('state') in RUNNING
+                    current = value['current']
+                    priority_ready = (current and current != value['active'] and account_state.eligible(
+                        dict(value, spacing_until=0), current, now))
+                    removed = value['active'] and value['active'] not in {item['id'] for item in metadata['accounts']} and not metadata['error']
+                    if running and (priority_ready or removed or value['corrupt'] or value['attention'] or value['metadata_error']):
                         units = self.stop_backfill(value, units, now)
-                        value.update(reason='state_store', pending=True, next_at=0)
-                    eligible = (value['enabled'] and value['pending'] and value['reason'] not in recovery.BLOCKED
-                                and now >= max(value['next_at'], value['hard_until'])
-                                and units.get(BACKFILL, {}).get('state') not in RUNNING)
-                    if eligible:
-                        # Close the scan/start gap as far as possible without
-                        # changing Steam launch options or starting the game.
+                    identifier = account_state.choose(value, metadata, now)
+                    if identifier and not value['active'] and units.get(BACKFILL, {}).get('state') not in RUNNING:
                         emerging = game_session()
                         if emerging:
                             state = {'session': emerging, 'paused': False}
@@ -235,19 +332,24 @@ class Controller:
                             systemctl('start', LIVE)
                             units = read_units()
                         else:
+                            record = value['accounts'][identifier]
+                            value['active'] = identifier
+                            record['next_at'] = max(record['hard_until'], now + 300)
+                            value['spacing_until'] = max(value['spacing_until'], now + HANDOFF)
+                            account_state.save(self.persistent, value)
+                            recovery.save(self.request_path, {'account_id': identifier, 'created_at': now,
+                                                            'token': uuid.uuid4().hex})
                             try:
-                                # Reserve a bounded retry window before launch.
-                                # If a start/hook vanishes, never hot-loop starts.
-                                value['next_at'] = max(value['hard_until'], now + 300)
-                                recovery.save(self.persistent, value)
                                 if units.get(BACKFILL, {}).get('state') == 'failed':
                                     systemctl('reset-failed', BACKFILL)
                                 systemctl('start', '--no-block', BACKFILL)
-                                value['reason'] = ''
+                                record['reason'] = ''
                                 units = read_units()
                             except RuntimeError:
-                                recovery.retry(value, now)
-            phase = recovery.view(value, units, session, now)['phase']
+                                self.request_path.unlink(missing_ok=True)
+                                value['active'] = ''
+                                recovery.retry(record, now)
+            phase = account_state.view(value, metadata, units, session, now)['phase']
             notice = phase if phase in {'cooldown', 'attention', 'caught_up'} else ''
             key = notice + ':' + (value['processed'] or 'corrupt') if notice else ''
             announce = bool(key and key != value['notice'])
@@ -256,12 +358,37 @@ class Controller:
             if state != old_state:
                 self.save(state)
             if value != old_value:
-                recovery.save(self.persistent, value)
+                account_state.save(self.persistent, value)
             if state != old_state or value != old_value:
                 self.marker.touch(exist_ok=True)
             if announce:
                 notify(notice)
-            return self.result(state, value, units, session, now)
+            return self.result(state, value, metadata, units, session, now)
+
+
+def take_request(controller, environment, now):
+    """Consume one schedule request and bind its account to this unit invocation."""
+    invocation = environment.get('INVOCATION_ID', '')
+    if not recovery.INVOCATION.fullmatch(invocation):
+        raise ValueError('A managed recovery invocation is required')
+    with (controller.directory / 'control.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        request = account_state.read_json(controller.request_path, 4096)
+        identifier = accounts.account_id(request.get('account_id', ''))
+        token = request.get('token', '')
+        created = request.get('created_at')
+        value = account_state.read(controller.persistent)
+        record = value['accounts'].get(identifier)
+        if (not identifier or not isinstance(token, str) or not recovery.INVOCATION.fullmatch(token)
+                or not account_state.number(created) or not 0 <= now - created <= 30
+                or value['active'] != identifier or not value['enabled'] or value['corrupt'] or value['attention'] or record is None
+                or record['corrupt'] or record['reason'] in recovery.BLOCKED
+                or now < max(value['global_until'], value['legacy_until'], value['settling_until'], record['hard_until'])
+                or game_session()):
+            raise ValueError('Recovery request is no longer eligible')
+        controller.request_path.unlink()
+        recovery.save(controller.running_path, {'account_id': identifier, 'invocation': invocation, 'token': token})
+        return identifier
 
 
 def main():
@@ -269,11 +396,22 @@ def main():
     session = sys.argv[2] if len(sys.argv) > 2 else ''
     runtime = os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}')
     try:
+        controller = Controller(runtime)
         if action == 'record-finished':
-            recovery.record_completion(recovery.completion_path(recovery.state_path()), os.environ, int(time.time()))
-            Path(runtime, 'deadlock-api-ingest-bar.status').touch(exist_ok=True)
+            invocation = os.environ.get('INVOCATION_ID', '')
+            identifier = controller.bound_account(invocation)
+            recovery.record_completion(recovery.completion_path(controller.persistent), os.environ,
+                                       int(time.time()), account_id=identifier)
+            controller.marker.touch(exist_ok=True)
             return 0
-        print(json.dumps(Controller(runtime).execute(action, session)))
+        if action == 'run-selected':
+            executable = Path(session)
+            expected = Path.home() / '.local/share/deadlock-api-ingest/deadlock-api-ingest'
+            if executable != expected or not executable.is_file():
+                raise ValueError('Unexpected recovery executable')
+            identifier = take_request(controller, os.environ, int(time.time()))
+            os.execv(str(executable), [str(executable), '--own-matches', '--account-id', identifier])
+        print(json.dumps(controller.execute(action, session)))
         return 0
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
         print(json.dumps({'error': str(exc)[:1024]}))

@@ -1,7 +1,7 @@
 # Deadlock Sync
 
 Live Deadlock match syncing and automatic history recovery, with status and Quit
-controls. Uses the official **deadlock-api-ingest** engine to feed Deadlock API,
+controls. Uses a pinned **deadlock-api-ingest** engine extension to feed Deadlock API,
 whose data is used by Statlocker. The Windows app uses a small native tray
 controller; the Linux version integrates with the existing Omarchy bar.
 
@@ -9,8 +9,8 @@ controller; the Linux version integrates with the existing Omarchy bar.
 
 | Platform | Download | Setup |
 | --- | --- | --- |
-| Windows x64 | [Windows installer](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.1.1/Deadlock-Sync-0.1.1-Setup.exe) | Double-click, then **Next → Install → Finish**. [Windows instructions](windows/README.md). |
-| Omarchy Linux x64 | [Linux archive](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.1.1/deadlock-sync-0.1.1-linux-omarchy-x64.tar.gz) | Extract, preview/install, then reload the shell. [Linux instructions](linux/README.md). |
+| Windows x64 | [Windows installer](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.2.0/Deadlock-Sync-0.2.0-Setup.exe) | Double-click, then **Next → Install → Finish**. [Windows instructions](windows/README.md). |
+| Omarchy Linux x64 | [Linux archive](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.2.0/deadlock-sync-0.2.0-linux-omarchy-x64.tar.gz) | Extract, preview/install, then reload the shell. [Linux instructions](linux/README.md). |
 
 The Windows installer starts the tray app and opens its status window when you
 click Finish. Starting with Windows is checked by default on a fresh install;
@@ -19,7 +19,7 @@ updates retain your previous startup choice. No terminal, administrator access,
 syncing needs internet access. This community build is unsigned, so Windows may
 show a publisher warning.
 
-See the [release page](https://github.com/mapleroyal/deadlock-sync/releases/tag/v0.1.1)
+See the [release page](https://github.com/mapleroyal/deadlock-sync/releases/tag/v0.2.0)
 for checksums and validation notes. This release is a preview. The Linux
 package requires Omarchy; it is not a generic GNOME/KDE tray application.
 
@@ -30,8 +30,11 @@ package requires Omarchy; it is not a generic GNOME/KDE tray application.
   following a short settling delay.
 - History recovery starts with each account's newest history page and works
   backward, preserving Steam's order within each page.
-- Throttled recovery stops its worker and waits, normally 24 hours plus a small
-  jitter. The icon stays visible with progress and the next attempt time.
+- The current Steam account gets priority. Switching accounts moves the new
+  eligible account ahead of other history work after a short pacing delay.
+- Each account has its own progress, login errors and Steam cooldown, normally
+  24 hours plus a small jitter. Other eligible accounts can continue while one
+  waits. An upload-service-wide limit still pauses uploads for every account.
 - Temporary failures back off. Authentication, access or storage problems need
   attention. Cooldowns and attempt records survive restarts and updates.
 - **Quit syncing** stops work and hides the icon. A later game or explicit launch
@@ -44,10 +47,11 @@ accounts, so review saved accounts on shared computers. Enable only one recovery
 owner for an account across computers or a Linux host/Windows VM pair. Do not
 also run upstream's default GUI watcher.
 
-After switching Steam accounts, launching Deadlock again starts live syncing
-for that game session. Each history pass rereads the usable remembered accounts;
-an account switch alone does not interrupt a pass or trigger a new one while
-idle. Accounts are processed separately, and existing cooldowns still apply.
+The app notices account changes from Steam's local account information. It
+recovers the current account first when eligible, then other remembered accounts
+one at a time. It preserves each account's cooldown across switches and restarts;
+switching never resets a limit. The panel shows which account is being recovered
+and which accounts are waiting or need attention.
 
 Accepted uploads and matches visible in Statlocker are different milestones.
 Remote indexing can lag, and old unavailable data means complete historical
@@ -64,7 +68,7 @@ The ready-to-use installer is the normal Windows installation path. For source
 changes, the [implementation guide](GUIDE.md) specifies architecture, lifecycle, retry
 policy, persistence, UI and acceptance checks. [Upstream facts](UPSTREAM.md)
 captures verified Windows behavior and log markers. [upstream.json](upstream.json)
-pins the official Windows executable and checksum; the Linux package has its
+pins the Windows engine executable and checksum; the Linux package has its
 own pin. Source builds and tests are described in the platform instructions.
 
 No account state, credentials, match history or private logs belong in this

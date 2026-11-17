@@ -8,7 +8,9 @@ requires --memory-helper and a one-time system authentication prompt. Backfill
 never starts during installation. A fresh shell engine is required afterwards.
 """
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import os
@@ -25,7 +27,8 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parent
 PLUGIN_ID = 'user1.deadlock-ingest'
 PLUGIN_DEST = Path('.config/omarchy/plugins') / PLUGIN_ID
-PLUGIN_FILES = ('backend/progress.py', 'backend/recovery.py', 'backend/control.py',
+PLUGIN_FILES = ('backend/progress.py', 'backend/recovery.py', 'backend/accounts.py',
+                'backend/account_state.py', 'backend/control.py',
                 'Model.js', 'i18n/en.json', 'Service.qml', 'BarWidget.qml', 'manifest.json')
 APP_DEST = Path('.local/share/deadlock-api-ingest')
 OBSOLETE_FILES = (APP_DEST / 'backfill-finished',)
@@ -219,6 +222,31 @@ def apply_files(home, files):
     return backup
 
 
+@contextmanager
+def display_install_guard(runtime=None):
+    """Plugin reloads unload Screens Off: serialize with its exact journal lock."""
+    runtime = Path(runtime or os.environ.get('XDG_RUNTIME_DIR', f'/run/user/{os.getuid()}'))
+    directory = runtime / 'user1-controls-screens-off'
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if directory.is_symlink() or directory.stat().st_uid != os.getuid():
+        raise ValueError('Unsafe Screens Off runtime directory')
+    descriptor = os.open(directory / 'lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError('Screens Off is active or restoring; install after the displays are awake') from None
+        try:
+            (directory / 'state.json').lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            raise ValueError('Screens Off restoration is pending; finish it before installing')
+        yield
+    finally:
+        os.close(descriptor)
+
+
 def preflight(home):
     if os.geteuid() == 0 or Path(home).resolve() != Path.home().resolve():
         raise ValueError('--apply must run as the intended desktop user, using their own home')
@@ -280,12 +308,14 @@ def main(argv=None):
             install_helper(helper)
             if not helper_ready(upstream['assets']['memoryHelper']):
                 raise ValueError('Memory helper installation did not verify')
-        # Remove legacy login activation but never start either job here.
-        subprocess.run(['systemctl', '--user', 'disable', *UNITS], check=False, stdout=subprocess.DEVNULL)
-        backup = apply_files(args.home, files)
-        subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True)
-        if shutil.which('update-desktop-database'):
-            subprocess.run(['update-desktop-database', str(args.home / '.local/share/applications')], check=True)
+        # Hold the display owner's lock through every watched-tree write.
+        with display_install_guard():
+            # Remove legacy login activation but never start either job here.
+            subprocess.run(['systemctl', '--user', 'disable', *UNITS], check=False, stdout=subprocess.DEVNULL)
+            backup = apply_files(args.home, files)
+            subprocess.run(['systemctl', '--user', 'daemon-reload'], check=True)
+            if shutil.which('update-desktop-database'):
+                subprocess.run(['update-desktop-database', str(args.home / '.local/share/applications')], check=True)
         print('Installed', upstream['version'], '; changed-file backups:', backup)
         print('Run omarchy restart shell for a fresh engine. Enable automatic recovery with deadlock-backfill.')
         return 0

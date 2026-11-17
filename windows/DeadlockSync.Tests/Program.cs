@@ -444,5 +444,197 @@ Test("account numbers and memory errors are not HTTP access failures", () =>
     Check(!steam.EndpointAccessDenied); Equal("auth", steam.Cause);
 });
 
+Test("current Steam account gets the first eligible worker", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    Equal("2", AccountPolicy.Select(state, ["1", "2"], Now));
+    AccountPolicy.ObserveEvidence(state, "2", Evidence("Steam GC rate-limited the request"), Now, zero);
+    Equal("1", AccountPolicy.Select(state, ["1", "2"], Now));
+    Equal(0L, state.HardUntilUtc); Equal(Now + 86_400, state.Accounts["2"].HardUntilUtc);
+});
+Test("one account authentication failure does not block another", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    AccountPolicy.Finish(state, "1", "auth", 1, Evidence("Steam logon failed: InvalidPassword"), Now, random: zero);
+    Equal("2", AccountPolicy.Select(state, ["1", "2"], Now + 21));
+    Equal("auth", state.Accounts["1"].Reason); Equal("", state.Reason);
+});
+Test("account switch preempts only for an eligible current account", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    AccountPolicy.Reserve(state, "1", Now);
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    Check(AccountPolicy.ShouldPreempt(state, "1", ["1", "2"], Now));
+    AccountPolicy.ObserveEvidence(state, "2", Evidence("Steam rate limit reached."), Now, zero);
+    Check(!AccountPolicy.ShouldPreempt(state, "1", ["1", "2"], Now));
+});
+Test("account change marks caught up history pending without resetting limits", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    state.Accounts["2"].Pending = false; state.Accounts["2"].HardUntilUtc = Now + 90;
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    Check(state.Accounts["2"].Pending); Equal(Now + 90, state.Accounts["2"].HardUntilUtc);
+});
+Test("changing accounts while disabled does not override Quit", () =>
+{
+    SyncState state = new();
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    Check(!state.Enabled); Equal("", AccountPolicy.Select(state, ["1", "2"], Now));
+});
+Test("account workers retain cross-process pacing and release intentional reservation", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    AccountPolicy.Reserve(state, "1", Now);
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    AccountPolicy.Finish(state, "1", "stop", -1, Evidence(), Now + 5, true, zero);
+    Equal(Now + 26, state.NextWorkerUtc); Equal(Now + 26, state.Accounts["1"].NextAtUtc);
+    Equal("", AccountPolicy.Select(state, ["1", "2"], Now + 25));
+    Equal("2", AccountPolicy.Select(state, ["1", "2"], Now + 26));
+});
+Test("trailing old-worker throttle belongs to old account after switch", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    AccountPolicy.Finish(state, "1", "old", -1, Evidence("Steam rate limit reached."), Now, true, zero);
+    Equal(Now + 86_400, state.Accounts["1"].HardUntilUtc); Equal(0L, state.Accounts["2"].HardUntilUtc);
+    Equal("2", AccountPolicy.Select(state, ["1", "2"], Now + 21));
+});
+Test("upload endpoint throttle remains global across accounts and live", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    AccountPolicy.ObserveEvidence(state, "1", Evidence("HTTP 429 Too Many Requests"), Now, zero);
+    Equal("", AccountPolicy.Select(state, ["1", "2"], Now));
+    Check(!RecoveryPolicy.CanLive(state, "game", Now)); Equal(Now + 86_400, state.UploadHardUntilUtc);
+    Equal("upload_rate_limit", AccountPolicy.View(state, ["1", "2"], "game", Now).Reason);
+});
+Test("game exit settling covers all accounts without sharing Steam cooldowns", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    AccountPolicy.ObserveGame(state, "g1", Now); AccountPolicy.ObserveGame(state, "", Now + 5);
+    Equal("", AccountPolicy.Select(state, ["1", "2"], Now + 64));
+    Equal("1", AccountPolicy.Select(state, ["1", "2"], Now + 65));
+    Equal(0L, state.HardUntilUtc);
+});
+Test("removed remembered account is not scheduled but cooldown remains", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    state.Accounts["1"].HardUntilUtc = Now + 100;
+    AccountPolicy.ObserveAccounts(state, ["2"], "2");
+    Check(AccountPolicy.ShouldPreempt(state, "1", ["2"], Now));
+    Equal("2", AccountPolicy.Select(state, ["2"], Now));
+    Equal(Now + 100, state.Accounts["1"].HardUntilUtc);
+});
+Test("legacy shared throttle migrates without guessing newly selected account", () => StoreTest((store, _) =>
+{
+    SyncState legacy = new() { Version = 1, Enabled = true, HardUntilUtc = Now + 100, NextAtUtc = Now + 100, Reason = "rate_limit" };
+    string original = JsonSerializer.Serialize(legacy); File.WriteAllText(store.Path, original);
+    SyncState state = store.Load(); Equal(2, state.Version); Check(!state.Corrupt);
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    Equal("", AccountPolicy.Select(state, ["1", "2"], Now));
+    Equal(0L, state.Accounts["2"].HardUntilUtc); Equal("legacy_cooldown", AccountPolicy.View(state, ["1", "2"], "", Now).Reason);
+    store.Save(state); Equal(original, File.ReadAllText(store.Path + ".v1"));
+    Equal("2", AccountPolicy.Select(store.Load(), ["1", "2"], Now + 100));
+}));
+Test("v2 separate account deadlines survive restart and enable", () => StoreTest((store, _) =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    AccountPolicy.ObserveEvidence(state, "1", Evidence("Steam rate limit reached."), Now, zero);
+    store.Save(state); state = store.Load(); Check(!state.Corrupt);
+    AccountPolicy.Enable(state, Now); Equal("2", AccountPolicy.Select(state, ["1", "2"], Now));
+    Equal(Now + 86_400, state.Accounts["1"].HardUntilUtc);
+}));
+Test("damaged account state blocks recovery while retaining deadline evidence", () => StoreTest((store, _) =>
+{
+    SyncState state = new(); AccountPolicy.ObserveAccounts(state, ["1"], "1"); state.Accounts["1"].HardUntilUtc = Now + 100;
+    var node = JsonSerializer.SerializeToNode(state)!.AsObject(); node["Accounts"]!["1"]!["Pending"] = "yes";
+    File.WriteAllText(store.Path, node.ToJsonString()); var restored = store.Load();
+    Check(restored.Corrupt); Equal(Now + 100, restored.Accounts["1"].HardUntilUtc);
+}));
+Test("Steam metadata parser discovers public ids and unique current account", () =>
+{
+    var parsed = SteamAccounts.Parse("// metadata only\n\"users\" { \"76561197960265729\" { \"PersonaName\" \"{\" \"MostRecent\" \"0\" } \"76561197960265730\" { \"AccountName\" \"Second\" \"MostRecent\" \"1\" } }");
+    Equal(2, parsed.Accounts.Count); Equal("2", parsed.CurrentId); Equal("{", parsed.Label("1"));
+});
+Test("ambiguous current account is not arbitrarily chosen", () =>
+{
+    var parsed = SteamAccounts.Parse("\"users\" { \"76561197960265729\" { \"MostRecent\" \"1\" } \"76561197960265730\" { \"MostRecent\" \"1\" } }");
+    Equal("", parsed.CurrentId);
+});
+Test("Steam AutoLogin fallback identifies current account without MostRecent", () =>
+{
+    var parsed = SteamAccounts.Parse("\"users\" { \"76561197960265729\" { \"AutoLogin\" \"0\" \"AllowAutoLogin\" \"1\" } \"76561197960265730\" { \"AutoLogin\" \"1\" \"AllowAutoLogin\" \"1\" } }");
+    Equal("2", parsed.CurrentId);
+});
+Test("malformed metadata is rejected instead of guessing accounts", () =>
+{
+    foreach (string text in new[] { "\"users\" {", "\"users\" {} \"users\" {}", "{\"users\" {}}" })
+    {
+        bool rejected = false; try { SteamAccounts.Parse(text); } catch (InvalidDataException) { rejected = true; }
+        Check(rejected);
+    }
+});
+
+Test("interrupted long worker cannot reset cross-account pacing on restart", () => StoreTest((store, _) =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    AccountPolicy.Reserve(state, "1", Now); store.Save(state);
+    state = store.Load(); AccountPolicy.RecoverInterrupted(state, Now + 600);
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    Equal("", state.ActiveAccountId); Equal("", AccountPolicy.Select(state, ["1", "2"], Now + 620));
+    Equal("2", AccountPolicy.Select(state, ["1", "2"], Now + 621));
+}));
+Test("new current-account sign-in retries auth only once and retains hard limits", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    state.Accounts["2"].Reason = "auth"; state.Accounts["2"].HardUntilUtc = Now + 100;
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    Equal("", state.Accounts["2"].Reason); Equal(Now + 100, state.Accounts["2"].HardUntilUtc);
+    state.Accounts["2"].Reason = "auth";
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2"); Equal("auth", state.Accounts["2"].Reason);
+});
+Test("blocked remaining history reports attention when current account is caught up", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    state.Accounts["1"].Pending = false; state.Accounts["2"].Reason = "auth";
+    var view = AccountPolicy.View(state, ["1", "2"], "", Now);
+    Equal("attention", view.Phase); Equal("2", view.AccountId); Equal("auth", view.Reason);
+});
+Test("switching back to an interrupted account does not keep its crash reservation", () =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1"); AccountPolicy.Reserve(state, "1", Now);
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "2");
+    AccountPolicy.Finish(state, "1", "first-stop", -1, Evidence(), Now + 1, true, zero);
+    AccountPolicy.Reserve(state, "2", Now + 22);
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    Check(AccountPolicy.ShouldPreempt(state, "2", ["1", "2"], Now + 23));
+    AccountPolicy.Finish(state, "2", "second-stop", -1, Evidence(), Now + 23, true, zero);
+    Equal("1", AccountPolicy.Select(state, ["1", "2"], Now + 44));
+});
+Test("saved per-account upload evidence restores the global upload deadline", () => StoreTest((store, _) =>
+{
+    SyncState state = new() { Enabled = true };
+    AccountPolicy.ObserveAccounts(state, ["1", "2"], "1");
+    state.Accounts["1"].UploadHardUntilUtc = Now + 100;
+    store.Save(state); state = store.Load();
+    Equal(Now + 100, state.UploadHardUntilUtc);
+    Check(!RecoveryPolicy.CanLive(state, "game", Now));
+    Equal("", AccountPolicy.Select(state, ["1", "2"], Now));
+}));
+
 Console.WriteLine($"{passed} passed; {failed} failed.");
 return failed == 0 ? 0 : 1;

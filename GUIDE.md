@@ -1,7 +1,7 @@
 # Deadlock Sync implementation guide
 
 Normal Windows users install the ready-to-use
-[0.1.1 setup executable](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.1.1/Deadlock-Sync-0.1.1-Setup.exe):
+[0.2.0 setup executable](https://github.com/mapleroyal/deadlock-sync/releases/download/v0.2.0/Deadlock-Sync-0.2.0-Setup.exe):
 double-click, then Next, Install, Finish. They do not need a coding agent,
 terminal, SDK, separate .NET installation or administrator access.
 
@@ -47,11 +47,14 @@ Bundle it in the installer, then verify it again before use. Save it as
 | Situation | Child command |
 | --- | --- |
 | Deadlock running | `deadlock-api-ingest.exe --no-gc` |
-| Game closed and recovery eligible | `deadlock-api-ingest.exe --own-matches` |
+| Game closed and an account is eligible | `deadlock-api-ingest.exe --own-matches --account-id ID32` |
 | Cooldown, caught up, disabled or attention | No ingestion child |
 
 Memory reading is already enabled. Do not combine the two commands or add
 `--no-memory`, `--once`, `--gui` or `--install`. Preserve Steam launch options.
+Use the pinned selected-account engine extension; an unmodified upstream binary
+does not support the selector. A selected account that is missing or cannot
+authenticate must fail without falling back to another account.
 Run as the ordinary Steam user. If memory access is denied, diagnose differing
 privilege levels and report it; do not silently elevate or change protections.
 
@@ -79,8 +82,10 @@ does not stop a console worker. Never claim that a terminal was opened.
 3. Game exit stops live ingestion promptly. Keep enabled recovery pending and
    wait at least 60 seconds after exit, or longer if a retry deadline applies.
    In-game Exit, Alt+F4 and a crash are all process exits.
-4. Run one eligible recovery pass. A successful pass becomes **Caught up** and
-   waits for subsequent gameplay before another automatic history check.
+4. Run one eligible account's recovery pass. Prefer the current Steam account;
+   if it is caught up, waiting or needs account-specific attention, choose another
+   eligible remembered account. A successful account becomes **Caught up** and
+   waits for subsequent gameplay or a new current-account selection.
    Preserve upstream's newest-history-page-first order for each account, including
    after filtering known or exhausted matches. See UPSTREAM for the within-page
    and cross-account limits; do not claim an explicit timestamp sort.
@@ -89,6 +94,20 @@ does not stop a console worker. Never claim that a terminal was opened.
    explicit restriction on the upload endpoint itself.
 6. Enforce a six-hour maximum per recovery invocation. Handle sleep/resume by
    reconciling current time and process state once; never replay missed ticks.
+
+Read only bounded account metadata from Steam's `loginusers.vdf`; do not read
+tokens in the supervisor. Match the engine's Steam directory selection: on Linux
+choose the newest account-file modification time among discovered installations;
+on Windows use Steam's install registry location. On Windows prefer a known active
+Steam account registry value when available; otherwise use a unique MostRecent
+record, or a unique AutoLogin record if MostRecent is absent. Do not confuse
+AutoLogin with AllowAutoLogin, which can be enabled for multiple accounts. Do not
+invent a current account when metadata is ambiguous or malformed.
+An account switch marks the new current account pending. If it is eligible,
+stop and drain another account's owned worker before switching. Keep a persisted
+minimum 20-second delay between backfill workers so switching cannot reset the
+engine's pacing. A blocked current account does not prevent other eligible
+accounts from progressing. Game launch still preempts all backfill immediately.
 
 The original game-only icon lifetime was superseded by continuous recovery:
 the icon remains visible while recovery is enabled, including during waiting,
@@ -107,11 +126,18 @@ cannot honestly be described as zero resident processes.
 ## 4. Persist cooldowns before doing work
 
 Store versioned JSON in `%LOCALAPPDATA%\DeadlockSync\state\`, separately from
-upstream state. Include enabled/pending, next attempt UTC, hard cooldown UTC,
-separate upload-endpoint cooldown UTC, failure count/reason, last and suppressed game identities, processed run ID,
-numeric progress and notification deduplication. Use atomic replacement, validate
+upstream state. Version 2 keeps a bounded map keyed by canonical Steam account
+ID32, with per-account pending work, next attempt, Steam cooldown, failure reason,
+progress and consumed completion identity. Global state owns enabled intent,
+the upload-endpoint cooldown, cross-worker pacing, game identities and notices.
+Use atomic replacement, validate
 types/ranges/size and retain an invalid original for repair. Corrupt state blocks
-backfill; never treat it as a fresh eligible schedule.
+backfill; never treat it as a fresh eligible schedule. Migrate legacy global
+Steam deadlines only when trusted evidence attributes them to a specific account,
+such as an explicit account throttle marker from the exact completed owned
+invocation. If attribution is unavailable, preserve the old deadline as a
+temporary shared migration hold until it expires. Never assign it to whichever
+account happens to be current after an upgrade.
 
 Before launching recovery, persist a five-minute reservation against rapid
 crash/relaunch loops. Give each run a unique ID. Record/consume completion once,
@@ -122,14 +148,14 @@ parallel work or a burst of retries.
 
 | Outcome | Action |
 | --- | --- |
-| Confirmed Steam throttling | Stop recovery; next attempt at evidence time + 24 hours + random 0–300 seconds. Clamp future evidence timestamps to now. Preserve any later existing deadline. |
+| Confirmed Steam throttling | Stop that account's recovery; its next attempt is evidence time + 24 hours + random 0–300 seconds. Clamp future timestamps and preserve any later deadline. Other eligible accounts may proceed after the shared pacing delay. |
 | Explicit upload-endpoint HTTP 429 | Stop either worker and persist a separate deadline blocking both modes. Use the same conservative fallback when no server delay is exposed; ordinary Steam GC throttling still permits live memory sync. |
 | Temporary network/GC error or unknown nonzero exit | 5, 10, 20, 40, then 60 minutes, plus random 0–60 seconds. Respect hard cooldown. |
 | Steam account playing another game | 15, 30, then 60 minutes, plus random 0–60 seconds. Respect hard cooldown. |
-| Missing/expired login, private history, permission failure | Attention; no repeated automatic attempts. Explicit Enable may retry after the user repairs access, retaining cooldown. |
+| Missing/expired login, private history, account-specific permission failure | Attention for that account; other eligible accounts can proceed. Explicit Enable may retry after access is repaired, retaining its cooldown. |
 | Attempt-store failure or corrupt controller state | Stop recovery and show attention. Do not erase or reset attempt records. Corruption requires repair, not an Enable button reset. |
 | Deliberate game takeover or Quit | Keep pending; no failure-count increment. Preserve throttle/error evidence already seen. |
-| Successful exit, no stronger evidence | Caught up; retain skipped/unavailable counts and wait for another game. |
+| Successful exit, no stronger evidence | Mark that account caught up, retain skipped/unavailable counts, then consider the next eligible account. |
 
 Classify storage failure before throttle, then permanent access/auth problems,
 account busy and transient failure. Independently retain throttle evidence even
@@ -155,7 +181,10 @@ Parse only output from the current owned invocation using UPSTREAM's markers.
 successes separately from failures; keep per-account batch progress separate or
 aggregate completed batches explicitly. A missing/truncated baseline cannot
 justify upload totals. Strip ANSI and bound line lengths and retained logs.
-Expose fixed status text and counters, not raw tokens, salts or account IDs.
+Show the current Steam account and the account being recovered, with each
+account's wait/attention status. Use bounded persona labels as plain text;
+untrusted names must never become rich text or commands. Do not expose tokens,
+salts or raw logs in the panel.
 
 Notify once on meaningful cooldown, attention or caught-up transitions. A
 throttle notification points to the panel's scheduled retry and leaves the icon present.
@@ -165,7 +194,7 @@ overflow; explain how to pin it rather than changing Explorer's global settings.
 ## 6. Install cleanly and enroll Steam locally
 
 Ship a conventional native NSIS setup executable, named
-`Deadlock-Sync-0.1.1-Setup.exe`. The wizard is Next, Install, Finish, with **Start
+`Deadlock-Sync-0.2.0-Setup.exe`. The wizard is Next, Install, Finish, with **Start
 Deadlock Sync** checked on the Finish page. Release installation is not a
 PowerShell script or an agentic procedure. Run as the logged-in Steam user with
 `RequestExecutionLevel user`; do not request elevation. Target Windows 10 or
@@ -221,9 +250,10 @@ password/token. A missing or expired session needs a Steam sign-in followed by
 Enable syncing; it does not require adding credentials to this app. Live memory
 sync can work even when remembered credentials are unavailable.
 
-Upstream processes **all decryptable remembered Steam accounts** and has no
-select-account option. On a shared/multi-account Steam installation, explain
-that scope and have the owner manage saved accounts in Steam or accept it.
+The app can recover all usable remembered Steam accounts, choosing one selected
+account per worker and prioritizing the current eligible account. On a shared
+Steam installation, explain that scope and have the owner manage saved accounts
+in Steam or accept it.
 Do not silently edit Steam token files or claim only the currently visible
 account will be processed.
 
@@ -253,6 +283,10 @@ Use fake workers and clocks for automation; never induce a real throttle.
 | Native uninstall | Installed apps removal closes owned work and removes app/startup/shortcut while retaining private recovery records. |
 | Idle/cooldown | One small controller, zero uploaders; tray gives reason and next attempt. |
 | Duplicate launch | One controller and at most one worker. |
+| Current Steam account changes | New eligible current account gets priority; old worker fully stops and pacing is retained before another starts. |
+| One account throttles or needs login | Its state is retained while another eligible account can continue. |
+| Upload endpoint throttles | All uploads pause across accounts, including live mode. |
+| Upgrade from unattributed legacy cooldown | Preserve the existing deadline as a temporary shared hold, never reset or guess attribution. |
 | Game starts during recovery | Recovery fully stopped before live starts; pending progress retained. |
 | Game closes | Live stops; recovery waits 60 seconds and respects later deadlines. |
 | Quit during a game | Workers stop, icon disappears, same game stays suppressed. |

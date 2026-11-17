@@ -6,7 +6,7 @@ PartOf=graphical-session.target
 [Service]
 Environment=RUST_LOG=info
 Type=oneshot
-ExecStart=@INGEST_EXEC@ --own-matches
+ExecStart=/usr/bin/python3 -B @CONTROL_EXEC@ run-selected @INGEST_EXEC@
 ExecStartPre=/usr/bin/touch %t/deadlock-api-ingest-bar.status
 ExecStopPost=/usr/bin/python3 -B @CONTROL_EXEC@ record-finished
 TimeoutStartSec=6h

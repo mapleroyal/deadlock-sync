@@ -1,7 +1,11 @@
 # Third party components
 
 Deadlock API Ingest is a separate upstream program distributed under the MIT
-license. The Windows installer bundles its pinned official executable and
+license. Deadlock Sync uses a small, separately published
+[engine extension](https://github.com/mapleroyal/deadlock-sync-engine) based on
+upstream v0.4.8 that adds strict single-account history selection. It preserves
+the upstream license and request pacing. The Windows installer bundles this
+pinned engine executable and
 `INGEST-LICENSE.txt`; the build verifies the pinned executable and license
 hashes, and the app verifies the executable before use. The Linux installer
 fetches its pinned executable and verifies its SHA-256. Upstream source and

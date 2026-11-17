@@ -109,7 +109,7 @@ ShellRoot {
           surface.check(!widget.progressKnown, "invalid progress remains indeterminate");
           surface.check(surface.named(surface.contentItem, "deadlock-sync-phase").text === "Checking Steam match history…", "untrusted phase is never displayed");
           service.status = {live:"inactive",backfill:"failed",paused:false,memory:0,
-            recovery:{enabled:true,phase:"cooldown",reason:"rate_limit",next_at:1794854886,skipped:0},
+            recovery:{enabled:true,phase:"cooldown",reason:"rate_limit",next_at:Math.floor(Date.now()/1000)+86400,skipped:0},
             progress:{mode:"backfill",phase:"limited",completed:35,total:320,uploaded:35,failed:0,history:1025,updated_at:1794768486}};
         } else if (surface.stage === 8) {
           surface.check(widget.visible && widget.stateKey === "state.recovery.cooldown", "cooldown keeps the icon visible after worker stops");
@@ -143,7 +143,7 @@ ShellRoot {
           events.mouseClick(retry, retry.width / 2, retry.height / 2, Qt.LeftButton, Qt.NoModifier, 1);
           surface.check(service.lastCommand === "enable", "retry requests enable without bypassing backend cooldown");
           service.status = {live:"active",backfill:"inactive",paused:false,memory:10000000,
-            recovery:{enabled:true,phase:"game",reason:"rate_limit",next_at:1794854886,skipped:0},
+            recovery:{enabled:true,phase:"game",reason:"rate_limit",next_at:Math.floor(Date.now()/1000)+86400,skipped:0},
             progress:{mode:"live",phase:"watching"}};
         } else if (surface.stage === 12) {
           surface.check(widget.stateKey === "state.syncing" && !widget.lastPass, "live work takes priority over waiting history");
@@ -160,14 +160,26 @@ ShellRoot {
           surface.check(surface.named(surface.contentItem, "deadlock-sync-detail").text.indexOf("needs repair") >= 0, "damaged tracking state explains required repair");
           service.hasGame = true;
           service.status = {live:"failed",backfill:"inactive",paused:false,memory:0,
-            recovery:{enabled:true,phase:"game",reason:"rate_limit",next_at:1794854886,skipped:0}};
-        } else {
+            recovery:{enabled:true,phase:"game",reason:"rate_limit",next_at:Math.floor(Date.now()/1000)+86400,skipped:0}};
+        } else if (surface.stage === 15) {
           surface.check(widget.attention && widget.stateKey === "state.failed", "failed live sync is not hidden by recovery mode");
           var liveRetry = surface.named(surface.contentItem, "deadlock-sync-retry");
           surface.check(liveRetry.visible && liveRetry.enabled, "failed live sync offers explicit restart");
           service.lastCommand = "";
           events.mouseClick(liveRetry, liveRetry.width / 2, liveRetry.height / 2, Qt.LeftButton, Qt.NoModifier, 1);
           surface.check(service.lastCommand === "resume", "live retry uses resume action");
+          service.hasGame = false;
+          service.status = {live:"inactive",backfill:"active",paused:false,memory:0,
+            recovery:{enabled:true,phase:"working",reason:"",current_account:"<img src=https://invalid>",active_account:"Second",
+              account_count:2,accounts:[{name:"<b>First</b>",current:true,phase:"cooldown",next_at:Math.floor(Date.now()/1000)+86400},
+                {name:"Second",current:false,phase:"working",next_at:null}]}};
+        } else {
+          var current = surface.named(surface.contentItem,"deadlock-sync-current-account");
+          var active = surface.named(surface.contentItem,"deadlock-sync-active-account");
+          surface.check(current.visible && current.textFormat === Text.PlainText && current.text.indexOf("<img") >= 0,
+            "current Steam name is rendered only as plain text");
+          surface.check(active.visible && active.text === "Recovering: Second", "working account is distinct from current account");
+          surface.check(surface.named(surface.contentItem,"deadlock-sync-account-list").visible, "per-account waiting list is visible");
           console.log("DEADLOCK_UI_RESULTS " + JSON.stringify({failures:surface.failures}));
           Qt.quit();
         }

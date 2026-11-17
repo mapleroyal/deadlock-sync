@@ -13,10 +13,8 @@ public sealed class ProgressSnapshot
     public ProgressSnapshot Copy() => (ProgressSnapshot)MemberwiseClone();
 }
 
-public sealed class SyncState
+public class RecoveryState
 {
-    public int Version { get; set; } = 1;
-    public bool Enabled { get; set; }
     public bool Pending { get; set; } = true;
     // All persistent times are UTC Unix seconds; format in local time only in UI.
     public long NextAtUtc { get; set; }
@@ -24,13 +22,26 @@ public sealed class SyncState
     public long UploadHardUntilUtc { get; set; }
     public string Reason { get; set; } = "";
     public int Failures { get; set; }
-    public string LastGameIdentity { get; set; } = "";
-    public string SuppressedGameIdentity { get; set; } = "";
     public string ProcessedRunId { get; set; } = "";
     public ProgressSnapshot Progress { get; set; } = new();
     public int Skipped { get; set; }
     public bool Corrupt { get; set; }
+    public long LastServedUtc { get; set; }
+}
+
+public sealed class SyncState : RecoveryState
+{
+    public int Version { get; set; } = 2;
+    public bool Enabled { get; set; }
+    public string LastGameIdentity { get; set; } = "";
+    public string SuppressedGameIdentity { get; set; } = "";
     public string LastNoticeKey { get; set; } = "";
+    public string CurrentAccountId { get; set; } = "";
+    public string ActiveAccountId { get; set; } = "";
+    public long NextWorkerUtc { get; set; }
+    public long SettlingUntilUtc { get; set; }
+    // Root HardUntilUtc retains only an unattributed legacy Steam cooldown.
+    public Dictionary<string, RecoveryState> Accounts { get; set; } = new();
 }
 
 public enum GameTransition { None, Started, Ended }

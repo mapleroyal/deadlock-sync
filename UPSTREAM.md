@@ -1,8 +1,32 @@
-# Windows ingest upstream facts
+# Engine integration and upstream facts
 
-Verified against GitHub release API and source at tag `v0.4.8` on 2026-11-16. This is the latest stable release returned by the GitHub API. Commit: `ef1882306163826809cb2768a39b4c4f8b258545`. Release date: 2026-11-06.
+The base upstream source was verified at tag `v0.4.8` on 2026-11-16, commit
+`ef1882306163826809cb2768a39b4c4f8b258545` (released 2026-11-06).
+Deadlock Sync 0.2.0 uses the [selected-account engine extension](https://github.com/mapleroyal/deadlock-sync-engine),
+based on that tag. Exact shipped binaries, source revision and hashes are pinned
+in `upstream.json` and `linux/omarchy/upstream.json`.
 
-## Binary pin
+## Selected-account extension
+
+- The supervisor launches `--own-matches --account-id ID32`, using a canonical
+  nonzero 32-bit Steam account ID. The selector requires own-history mode and
+  recovers only the selected remembered account. Missing or unusable credentials
+  fail with an authentication error; there is no fallback to another account.
+- Each worker owns exactly one account, so its Steam throttles, login errors,
+  progress and completion can be attributed to that selected account. The
+  supervisor retains separate persistent schedules and prioritizes the current
+  eligible account. A separate upload-endpoint limit remains global.
+- The extension retains the upstream 20-second request spacing and shared
+  per-match attempt store. Supervisors additionally retain 20 seconds between
+  backfill worker invocations, including account-switch preemption.
+- The supervisors read nonsecret Steam account metadata, watch account changes
+  and select one account before each worker launch. They do not decrypt tokens
+  or maintain a second password/login UI.
+- The base upstream behavior below still applies unless this section explicitly
+  changes it. In particular, unselected `--own-matches` remains all-account mode,
+  but the new supervisors always supply the selector.
+
+## Original upstream binary reference
 
 - Raw executable: `https://github.com/deadlock-api/deadlock-api-ingest/releases/download/v0.4.8/deadlock-api-ingest-windows-latest.exe`
 - SHA256: `d0e2a772ffc075713cc21759cb0a3b9e378a3235e59fc25cc7ed5b5d1f884464`
@@ -16,7 +40,7 @@ Sources: [release API](https://api.github.com/repos/deadlock-api/deadlock-api-in
 ## Commands and scope
 
 - Live worker: `deadlock-api-ingest.exe --no-gc`. Memory reading is ON by default; omit `--no-memory`. This worker initially scans Steam HTTP caches, keeps watching them, and reads the running game. It does not exit merely because the game closes: the custom supervisor must own its lifetime.
-- Own-history worker: `deadlock-api-ingest.exe --own-matches`. Separate one-shot process; **cannot** combine with `--no-gc`, `--once`, or a wrapped game command.
+- Own-history worker: `deadlock-api-ingest.exe --own-matches --account-id ID32` in Deadlock Sync 0.2.0. Separate one-shot process; **cannot** combine with `--no-gc`, `--once`, or a wrapped game command.
 - Backfill refuses to start with Deadlock running. It also checks while processing and aborts if Deadlock launches, but the supervisor should preempt promptly rather than wait for its next check.
 - `--own-matches` runs before the main watcher singleton lock is acquired. The supervisor must prevent concurrent backfills, and serialize live/backfill itself.
 - `--gui` is NOT a passive status reader: if no watcher is running it sets up autostart and starts a default no-argument watcher. `--install` and the setup executable open that GUI. Avoid all three in this custom app.
@@ -37,11 +61,11 @@ Sources: [Windows memory reader](https://github.com/deadlock-api/deadlock-api-in
 
 ## Steam credentials and local data
 
-- Backfill automatically uses **every decryptable remembered Steam account** in the primary Steam install, not only the currently displayed Steam account. It has no account-selection CLI flag. Explain this scope to a multi-account Windows user; do not add another account or rotate accounts to dodge throttles.
+- Original upstream backfill uses every decryptable remembered Steam account in the primary Steam install and has no selector. The extension adds strict single-account selection; the supervisors recover eligible remembered accounts sequentially with current-account priority. Keep each account's own cooldown intact, and never switch credentials to retry a blocked account's work.
 - Authentication setup: the user signs into their intended Steam account in Steam normally, enables the remembered login, and completes Steam Guard locally. Keep the credentials in Steam; do not copy `local.vdf` or implement a second login UI. If several accounts are remembered, have the user manage unwanted saved sessions in Steam rather than editing token files. Upstream verifies each recovered token identity against its corresponding account record.
 - It reads Steam install `config\loginusers.vdf` and `%LOCALAPPDATA%\Steam\local.vdf`. The session token in the latter is decrypted using current-user Windows DPAPI. Steam must have remembered the login; the wrapper should never collect a password or copy/decrypt tokens itself.
 - Live `--no-gc` never calls this GC authentication recovery and does not require a decryptable remembered token. Its account credit is read optionally from `loginusers.vdf` (`MostRecent` or `AutoLogin`). A backfill auth failure must not disable otherwise healthy live memory/cache sync.
-- Account changes are picked up at worker boundaries. Live upload-credit identity is cached once per worker; a normal game close/account switch/relaunch starts a fresh worker. Memory reads follow the running game rather than filtering by that cached identity. Own-history recovery calls `recover_all` once per invocation, so newly remembered accounts enter the next pass, not an already running pass. Neither supervisor watches Steam account changes directly; starting another game marks history pending. Existing cooldowns apply across account switches.
+- Live upload-credit identity is cached once per worker; a normal game close/account switch/relaunch starts a fresh worker. Memory reads follow the running game rather than filtering by that cached identity. The new supervisors watch metadata changes independently of worker startup and can preempt a background account for a newly current eligible account. The selected worker's identity remains fixed until it exits; account switches never reassign its completion or clear its cooldown.
 - Use an interactive per-user login task or HKCU startup entry for the **supervisor only**, not a SYSTEM service, S4U/non-interactive task, or another Windows user. If using Task Scheduler: run only while the user is logged on, normal privileges.
 - Upstream mutable state is `%APPDATA%\deadlock-api-ingest\` (Roaming), NOT the executable's LocalAppData install directory. It contains `gc-quota.json`, `gc-quota.lock`, `instance.lock`, `game-memory.lock`, `fetched-salts.jsonl`, and `logs\`. Daily logs retain up to seven files.
 - Preserve all upstream attempt/quota state on upgrades and retries. Never clear `gc-quota.json` to make another attempt. Wrapper recovery state belongs in a separate app-owned directory.
@@ -60,7 +84,8 @@ Sources: [console](https://github.com/deadlock-api/deadlock-api-ingest/blob/v0.4
 ## Pacing and incomplete history
 
 - Own-history mode follows Steam history pages, compares known match IDs with deadlock-api, then obtains missing salts via Steam GC and submits them to deadlock-api. IDs alone are insufficient for this local salt-recovery path.
-- Recovery starts with each account's newest history page, then walks backward through older pages. `fetch_match_history` starts without a cursor, appends pages in their returned order and requires the cursor to decrease. The missing/given-up filters preserve that order. This is newest-pages-first, not an explicit timestamp sort within a page; within-page order comes from Steam. Accounts are processed separately in recovered-account order, without prioritizing the most recently selected account or globally merging their histories. Preserve this ordering when updating the engine and recheck pagination plus filtering together. See [pagination](https://github.com/deadlock-api/deadlock-api-ingest/blob/v0.4.8/src/gc/client.rs#L273-L397) and [own-history filtering/processing](https://github.com/deadlock-api/deadlock-api-ingest/blob/v0.4.8/src/gc/mod.rs#L600-L645).
+- Recovery starts with each account's newest history page, then walks backward through older pages. `fetch_match_history` starts without a cursor, appends pages in their returned order and requires the cursor to decrease. The missing/given-up filters preserve that order. This is newest-pages-first, not an explicit timestamp sort within a page; within-page order comes from Steam. The supervisors choose the current eligible account first; they do not globally merge histories from several accounts. Preserve this ordering when updating the engine and recheck pagination plus filtering together. See [pagination](https://github.com/deadlock-api/deadlock-api-ingest/blob/v0.4.8/src/gc/client.rs#L273-L397) and [own-history filtering/processing](https://github.com/deadlock-api/deadlock-api-ingest/blob/v0.4.8/src/gc/mod.rs#L600-L645).
+- The upstream `gc_backoff_until` account field is maintained by background community recovery, not own-history mode. It cannot attribute an old supervisor-wide own-history cooldown to an account. Migration must use trustworthy invocation-specific throttle evidence or retain the unknown deadline as a temporary shared hold.
 - Each metadata request starts at least 20 seconds after the preceding metadata request. This is upstream code; do not patch it or parallelize children.
 - The default background GC has local caps of 40 salt requests and 20 friend-history requests per account per rolling 24 hours. **Those are not own-history mode's daily allowance.** Own-history mode intentionally bypasses that local 40-request cap and continues until done or Steam explicitly rate-limits it.
 - Steam does not supply a documented fixed daily reset time here. A wrapper wait of 24 hours plus positive jitter after confirmed throttling is a conservative policy inspired by upstream's 24-hour GC backoff, not a claim of Valve's reset time. Persist the deadline across quit, restart, sleep, login, and reinstall.

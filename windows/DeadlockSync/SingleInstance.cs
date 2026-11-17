@@ -13,12 +13,17 @@ internal sealed class SingleInstance : IDisposable
     public bool OwnsMutex { get; private set; }
     public SingleInstance(string testRoot)
     {
+        pipeName = Name(testRoot);
+        mutex = new Mutex(true, "Local\\" + pipeName, out bool first);
+        OwnsMutex = first;
+    }
+
+    private static string Name(string testRoot)
+    {
         string user = WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
         string identity = user + ":" + System.Diagnostics.Process.GetCurrentProcess().SessionId + ":" + testRoot;
         string suffix = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(identity)))[..24];
-        pipeName = "DeadlockSync-" + suffix;
-        mutex = new Mutex(true, "Local\\" + pipeName, out bool first);
-        OwnsMutex = first;
+        return "DeadlockSync-" + suffix;
     }
 
     public bool WaitForOwnership(int timeoutMilliseconds)
@@ -29,7 +34,10 @@ internal sealed class SingleInstance : IDisposable
         return OwnsMutex;
     }
 
-    public async Task<string?> SendAsync(string command)
+    public Task<string?> SendAsync(string command) => SendPipeAsync(pipeName, command);
+    internal static Task<string?> SendToAsync(string testRoot, string command) => SendPipeAsync(Name(testRoot), command);
+
+    private static async Task<string?> SendPipeAsync(string pipeName, string command)
     {
         try
         {

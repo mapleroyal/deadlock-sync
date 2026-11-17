@@ -9,7 +9,7 @@
   "state.failed": "Sync needs attention",
   "state.error": "Sync needs attention",
   "detail.live": "Live memory reading is enabled. History recovery waits while you play.",
-  "detail.backfill": "Recovering your own history automatically. Opening Deadlock pauses recovery and gives live sync priority.",
+  "detail.backfill": "Recovering the current eligible Steam account first. Switching accounts updates priority; opening Deadlock gives live sync priority.",
   "detail.paused": "Automatic recovery is off. Sync starts again next time you open Deadlock or launch Deadlock Match Backfill.",
   "detail.idle": "Starts with Deadlock or when you launch Deadlock Match Backfill.",
   "quit": "Quit syncing",
@@ -50,7 +50,7 @@
   "state.recovery.attention": "History recovery needs attention",
   "detail.caught_up": "No recovery is due. We will check again after your next game session.",
   "detail.game": "Live sync takes priority. History recovery resumes after Deadlock closes, once any cooldown ends.",
-  "detail.recovery.rate_limit": "Steam rate-limited recovery. Our 24-hour cooldown includes a short random delay; Steam did not provide a reset time.",
+  "detail.recovery.rate_limit": "This Steam account is cooling down. Other eligible remembered accounts can continue; the current account gets priority when eligible. Steam did not provide a reset time.",
   "detail.recovery.transient": "A temporary error interrupted recovery. The next attempt is scheduled automatically.",
   "detail.recovery.account_in_use": "Steam reports this account is playing a game. Recovery will retry when the account is available.",
   "detail.recovery.auth": "Sign in to Steam with Remember me, then choose Try again.",
@@ -66,5 +66,16 @@
     "other": "%1 older matches reached the recovery attempt limit."
   },
   "detail.recovery.corrupt": "Saved recovery tracking needs repair before automatic retries can resume. Live syncing can still run.",
-  "detail.live_failed": "Live syncing stopped unexpectedly. Choose Try again to restart it; your game keeps running."
+  "detail.live_failed": "Live syncing stopped unexpectedly. Choose Try again to restart it; your game keeps running.",
+  "account.current": "Current account: %1",
+  "account.working": "Recovering: %1",
+  "account.currentTag": "current",
+  "account.phase.working": "recovering",
+  "account.phase.attention": "needs attention",
+  "account.phase.caught_up": "caught up",
+  "account.phase.cooldown": "Steam cooldown",
+  "account.phase.retry": "waiting",
+  "detail.recovery.upload_rate_limit": "The upload service limited requests. Both live and historical uploads wait until its shared cooldown ends.",
+  "detail.recovery.legacy_cooldown": "A cooldown from the previous version could not be tied safely to one account. Its original deadline is preserved.",
+  "detail.recovery.account_metadata": "Waiting for readable Steam account information. Recovery resumes automatically when Steam has finished updating its account list."
 }

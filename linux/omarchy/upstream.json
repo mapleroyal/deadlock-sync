@@ -1,7 +1,7 @@
 {
-  "repository": "https://github.com/deadlock-api/deadlock-api-ingest",
-  "version": "v0.4.8",
-  "commit": "ef1882306163826809cb2768a39b4c4f8b258545",
+  "repository": "https://github.com/mapleroyal/deadlock-sync-engine",
+  "version": "v0.4.8-sync.1",
+  "commit": "0ba1f8cb9785c39029aa9d99716f2ef02d61e32b",
   "architecture": "x86_64",
   "assets": {
     "memoryHelper": {
@@ -11,10 +11,15 @@
       "size": 357168
     },
     "ingest": {
-      "name": "deadlock-api-ingest-ubuntu-latest",
-      "url": "https://github.com/deadlock-api/deadlock-api-ingest/releases/download/v0.4.8/deadlock-api-ingest-ubuntu-latest",
-      "sha256": "fdd2d0b1cb51292d282b9f4e6610ecd52a07e143ce920ac11b4cad900e7f1118",
-      "size": 20245184
+      "name": "deadlock-api-ingest-linux-x64",
+      "url": "https://github.com/mapleroyal/deadlock-sync-engine/releases/download/v0.4.8-sync.1/deadlock-api-ingest-linux-x64",
+      "sha256": "699025bd131da48b0c3516ea997eb2b703fc5da724f95fe10f94c71931625cad",
+      "size": 20365472
     }
+  },
+  "base_upstream": {
+    "repository": "https://github.com/deadlock-api/deadlock-api-ingest",
+    "version": "v0.4.8",
+    "commit": "ef1882306163826809cb2768a39b4c4f8b258545"
   }
 }
