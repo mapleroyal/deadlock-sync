@@ -221,6 +221,8 @@ class Controller:
             old_state, old_value = dict(state), json.loads(json.dumps(value))
             metadata = accounts.discover()
             if action == 'status':
+                # Show the latest Steam selection even if the next scheduling tick has not run.
+                account_state.reconcile(value, metadata)
                 return self.result(state, value, metadata, units, session, now)
             completion = recovery.read_completion(recovery.completion_path(self.persistent))
             if completion and completion.get('corrupt'):

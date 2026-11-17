@@ -8,13 +8,13 @@
     },
     {
       "path": "plugin/BarWidget.qml",
-      "sha256": "c55eb93716eaa69078a775825f73d206cb6ddc28ab6b1158a36dcf8de93c3f2d",
+      "sha256": "9e22e830c99d6e78d97cbe215b71729adff00942124bc20ce355cca6c5e9ecdb",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "plugin/Model.js",
-      "sha256": "d0568b432ad8cb7376e2c21c6163c512473c277e2536a20fe20a41db0678b52a",
+      "sha256": "8b8cca4adf177d92161931b3ad0fd9d6be65787f51eee33172f135fcfb3c4afe",
       "mode": "0o644",
       "executable": false
     },
@@ -26,7 +26,7 @@
     },
     {
       "path": "plugin/backend/account_state.py",
-      "sha256": "f7fdfc5d6f1fc0af876e2877cc6fa709bab9f5b4eb37c4155a192140d06e74cb",
+      "sha256": "13737239bf7601214197aa5b861121af98535b2563d2751802476631a755bf5d",
       "mode": "0o644",
       "executable": false
     },
@@ -38,7 +38,7 @@
     },
     {
       "path": "plugin/backend/control.py",
-      "sha256": "747ed4143da30cc29bc4a69f90f996a27a07330f5a5288c2d2d08523632b0f34",
+      "sha256": "57ecd435363642cf83b8bab8280ddd16bc081ac7e7f6be59ad41068fb2d2a574",
       "mode": "0o644",
       "executable": false
     },
@@ -56,13 +56,13 @@
     },
     {
       "path": "plugin/i18n/en.json",
-      "sha256": "14cb4cd90fb4993e28c116910fb872c750df2698b93d44721726801079e4b262",
+      "sha256": "26031875083a2888e4656b3e802f84eb8e7c402a302ccadba95688e3f4b622e0",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "plugin/manifest.json",
-      "sha256": "ebd16a90f376ca9076124d1084f8a95dcb7ff8a79c15acf1eb1b7d06757d7a14",
+      "sha256": "477fab70c1278f24c4c0dc5896392306002db27408e1784200b5a17b0b8d1cf3",
       "mode": "0o644",
       "executable": false
     },
@@ -92,7 +92,7 @@
     },
     {
       "path": "tests/model.test.cjs",
-      "sha256": "e5bf13f3fdd69eb50990b5b8120e9e661250bfc40b5398e4a8fbf3fa0df495f2",
+      "sha256": "a0a1a3ade8ae01336c6de0f1b7b14d56fdb375bcf0ed2d66703c97d16393e369",
       "mode": "0o644",
       "executable": false
     },
@@ -110,19 +110,19 @@
     },
     {
       "path": "tests/qml/shell.qml",
-      "sha256": "1b5d3054fee447ab2e02abb0a2bb02d9def9b9c93898fdb4774b84b3313e0fa0",
+      "sha256": "f699557ad361a1e518c494fda45aac5748b8690949e47044815296291d3d8436",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "tests/test_accounts.py",
-      "sha256": "c97d43623f04a53d70ad3e746b621f3dabbb22bf26d3d5e7a5127c75538dc986",
+      "sha256": "5061ae101e9363ad664add4261bdb042c10dc7f9800b9898b49e205eda691bf6",
       "mode": "0o644",
       "executable": false
     },
     {
       "path": "tests/test_control.py",
-      "sha256": "80def34e04d144d69248a72ac314225b542ea375150e71b482d8939666096dbd",
+      "sha256": "798cf7ba650c89df7ce9b3d0331d22bdee7ef70822f75092f951f1d14b9940c1",
       "mode": "0o644",
       "executable": false
     },

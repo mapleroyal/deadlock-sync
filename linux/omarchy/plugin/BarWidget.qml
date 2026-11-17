@@ -28,8 +28,8 @@ Panel {
   readonly property bool shown: managing || busy
   readonly property string detailKey: liveFailure ? "detail.live_failed" : (Model.running(status.backfill) ? "detail.backfill" :
     (Model.running(status.live) ? "detail.live" : (recovery.enabled ?
-      (recovery.phase === "caught_up" ? "detail.caught_up" : (recovery.phase === "game" ? "detail.game" :
-        (recovery.repair_required ? "detail.recovery.corrupt" : "detail.recovery." + recovery.reason))) :
+      (["caught_up", "waiting_for_account", "game"].indexOf(recovery.phase) >= 0 ? "detail." + recovery.phase :
+        (recovery.repair_required ? "detail.recovery.corrupt" : "detail.recovery." + recovery.reason)) :
       (status.paused && hasGame ? "detail.paused" : "detail.idle"))))
   readonly property real openPanelIndicatorWidth: button.opticalSize
   visible: shown
@@ -133,7 +133,7 @@ Panel {
         }
         Flickable {
           objectName: "deadlock-sync-account-list"
-          visible: root.recovery.accounts.length > 1
+          visible: root.recovery.accounts.length > 1 || (root.recovery.accounts.length === 1 && !root.recovery.current_account)
           width: parent.width
           height: visible ? Math.min(accountRows.implicitHeight, Style.space(100)) : 0
           contentHeight: accountRows.implicitHeight

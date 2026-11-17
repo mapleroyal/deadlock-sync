@@ -334,6 +334,29 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(self.saved_schedule()['active'], '2')
         self.assertEqual(json.loads(self.controller.request_path.read_text())['account_id'], '2')
 
+    def test_other_account_denied_stays_quiet_until_selected(self):
+        self.add_second_account()
+        self.controller.execute('enable', '')
+        self.stopped([record('Done, all own matches processed.')])
+        self.controller.execute('tick', '')
+        self.now += control.HANDOFF
+        self.controller.execute('tick', '')
+        self.assertEqual(self.saved_schedule()['active'], '2')
+        self.stopped([record('gc: account 2 failed: Steam GC unavailable: CM login: AccessDenied')], 1)
+        with patch.object(control, 'notify') as notify:
+            result = self.controller.execute('tick', '')
+            self.assertEqual(result['recovery']['phase'], 'waiting_for_account')
+            self.now += 86400
+            self.controller.execute('tick', '')
+            notify.assert_not_called()
+        self.assertEqual(self.actions().count(('start', '--no-block', control.BACKFILL)), 2)
+        self.metadata['current'] = '2'
+        result = self.controller.execute('status', '')
+        self.assertEqual((result['recovery']['current_account'], result['recovery']['phase']), ('Second', 'retry'))
+        self.assertEqual(self.saved_schedule()['accounts']['2']['reason'], 'auth')
+        self.controller.execute('tick', '')
+        self.assertEqual(self.saved_schedule()['active'], '2')
+
     def test_rate_limited_account_does_not_block_other_and_handoff_waits(self):
         self.add_second_account()
         self.controller.execute('enable', '')

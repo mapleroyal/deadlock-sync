@@ -29,6 +29,13 @@ its own Steam cooldown, progress and login status, so other eligible accounts ca
 continue while one waits. An upload-service-wide limit still pauses all uploads.
 Each account's history starts with its newest page and works backward.
 
+You can keep Steam set to ask which account to use at startup. If Steam
+declines a saved login for an account you are not using, the panel names that
+account and keeps showing whether your current account is caught up. The next
+time you choose the affected account in Steam, recovery retries automatically
+once the game is closed and its cooldown has passed. Follow any sign-in prompt
+Steam shows for that account.
+
 Click the gamepad icon for activity, counts and the next retry time. Right-click
 **Quit syncing** to stop both jobs, disable recovery and hide the icon. A new
 game session or the launcher enables it again. Enabled recovery keeps the icon

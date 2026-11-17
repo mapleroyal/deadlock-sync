@@ -140,13 +140,31 @@ class AccountPolicyTests(unittest.TestCase):
             account_state.save(path, value)
             self.assertEqual(backup.read_bytes(), original)
 
-    def test_one_caught_up_account_does_not_hide_another_account_attention(self):
+    def test_waiting_for_another_login_requires_a_known_caught_up_current_account(self):
         value = account_state.default(); value['enabled'] = True
-        metadata = accounts.decode(vdf(1))
+        metadata = accounts.decode(vdf(1, {1: 'First', 2: 'Second', 3: 'Third'}))
         account_state.reconcile(value, metadata)
         value['accounts']['1']['pending'] = False
-        value['accounts']['2']['reason'] = 'auth'
-        self.assertEqual(account_state.view(value, metadata, {}, '', 100)['phase'], 'attention')
+        value['accounts']['2']['reason'] = value['accounts']['3']['reason'] = 'auth'
+        def view(session=''):
+            return account_state.view(value, metadata, {}, session, 100)
+
+        self.assertEqual(view()['phase'], 'waiting_for_account')
+        self.assertIsNone(view()['next_at'])
+        self.assertEqual([(row['name'], row['phase']) for row in view()['accounts']],
+                         [('First', 'caught_up'), ('Second', 'choose_account'), ('Third', 'choose_account')])
+        self.assertEqual(view('game')['phase'], 'game')
+        value['accounts']['3']['reason'] = 'unavailable'
+        self.assertEqual((view()['phase'], view()['reason']), ('attention', 'unavailable'))
+        value['accounts']['3']['reason'] = 'auth'
+        value['attention'] = 'state_store'
+        self.assertEqual((view()['phase'], view()['reason']), ('attention', 'state_store'))
+        value['attention'] = ''
+        value['accounts']['1'].update(pending=True, reason='auth')
+        self.assertEqual((view()['phase'], view()['reason'], view()['accounts'][0]['phase']), ('attention', 'auth', 'auth'))
+        metadata['current'] = ''
+        account_state.reconcile(value, metadata)
+        self.assertEqual((view()['phase'], view()['reason'], view()['current_account']), ('attention', 'choose_account', ''))
 
     def test_global_endpoint_blocks_all_accounts_and_displays_during_game(self):
         value = account_state.default(); value['enabled'] = True

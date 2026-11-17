@@ -54,6 +54,11 @@ ShellRoot {
       if (item.children) for (var child of item.children) { var found = named(child, name); if (found) return found; }
       return null;
     }
+    function hasText(item, text) {
+      if (item.text === text) return true;
+      for (var child of item.children || []) if (hasText(child, text)) return true;
+      return false;
+    }
     Timer {
       interval: 250; running: true; repeat: true
       onTriggered: {
@@ -173,13 +178,25 @@ ShellRoot {
             recovery:{enabled:true,phase:"working",reason:"",current_account:"<img src=https://invalid>",active_account:"Second",
               account_count:2,accounts:[{name:"<b>First</b>",current:true,phase:"cooldown",next_at:Math.floor(Date.now()/1000)+86400},
                 {name:"Second",current:false,phase:"working",next_at:null}]}};
-        } else {
+        } else if (surface.stage === 16) {
           var current = surface.named(surface.contentItem,"deadlock-sync-current-account");
           var active = surface.named(surface.contentItem,"deadlock-sync-active-account");
           surface.check(current.visible && current.textFormat === Text.PlainText && current.text.indexOf("<img") >= 0,
             "current Steam name is rendered only as plain text");
           surface.check(active.visible && active.text === "Recovering: Second", "working account is distinct from current account");
           surface.check(surface.named(surface.contentItem,"deadlock-sync-account-list").visible, "per-account waiting list is visible");
+          service.status = {live:"inactive",backfill:"failed",paused:false,memory:0,
+            recovery:{enabled:true,phase:"waiting_for_account",reason:"",current_account:"First",
+              account_count:2,accounts:[{name:"First",current:true,phase:"caught_up"},
+                {name:"Second",current:false,phase:"choose_account"}]}};
+        } else {
+          surface.check(widget.visible && !widget.attention && widget.stateKey === "state.recovery.waiting_for_account",
+            "a saved account waiting for Steam selection gives a neutral current-account status");
+          surface.check(!surface.named(surface.contentItem,"deadlock-sync-retry").visible, "retry is hidden until actionable");
+          surface.check(surface.hasText(surface.contentItem, "Second: choose this account in Steam to retry automatically"),
+            "the row names the account that Steam needs to authorize");
+          surface.check(surface.named(surface.contentItem,"deadlock-sync-detail").text.indexOf("when Deadlock is closed") >= 0,
+            "automatic retry timing is explained");
           console.log("DEADLOCK_UI_RESULTS " + JSON.stringify({failures:surface.failures}));
           Qt.quit();
         }

@@ -45,8 +45,8 @@ function progressRatio(value) {
 
 function recovery(value) {
   value = value && typeof value === "object" ? value : {};
-  var phases = ["off", "working", "cooldown", "retry", "game", "caught_up", "attention"];
-  var reasons = ["", "rate_limit", "transient", "account_in_use", "auth", "unavailable", "state_store", "settling", "upload_rate_limit", "legacy_cooldown", "account_metadata"];
+  var phases = ["off", "working", "cooldown", "retry", "game", "caught_up", "waiting_for_account", "attention"];
+  var reasons = ["", "rate_limit", "transient", "account_in_use", "auth", "choose_account", "unavailable", "state_store", "settling", "upload_rate_limit", "legacy_cooldown", "account_metadata"];
   var enabled = value.enabled === true;
   return {enabled: enabled,
     phase: enabled ? (phases.indexOf(value.phase) >= 0 ? value.phase : "attention") : "off",
@@ -59,7 +59,7 @@ function recovery(value) {
     accounts: Array.isArray(value.accounts) ? value.accounts.slice(0, 64).map(function(item) {
       item = item && typeof item === 'object' ? item : {};
       return {name: accountName(item.name), current: item.current === true,
-        phase: ['working', 'attention', 'caught_up', 'cooldown', 'retry'].indexOf(item.phase) >= 0 ? item.phase : 'attention',
+        phase: ['working', 'attention', 'auth', 'choose_account', 'caught_up', 'cooldown', 'retry'].indexOf(item.phase) >= 0 ? item.phase : 'attention',
         next_at: count(item.next_at, 4102444800)};
     }) : []};
 }

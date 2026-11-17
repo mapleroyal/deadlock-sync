@@ -51,7 +51,7 @@ assert.equal(m.recovery({repair_required:true}).repair_required,true);
 assert.equal(m.recovery({repair_required:'true'}).repair_required,false);
 assert.equal(m.scheduledAttempt(cooldown.recovery,1794768486),true);
 assert.equal(m.scheduledAttempt(cooldown.recovery,1794854886),false,'elapsed deadline is not a future schedule');
-for (const phase of ['off','working','caught_up','attention']) {
+for (const phase of ['off','working','caught_up','waiting_for_account','attention']) {
   assert.equal(m.scheduledAttempt({...cooldown.recovery,phase},1794768486),false,phase+' has no scheduled retry');
 }
 assert.equal(m.scheduledAttempt({...cooldown.recovery,phase:'game'},1794768486),true,'queued game can retain a future cooldown');

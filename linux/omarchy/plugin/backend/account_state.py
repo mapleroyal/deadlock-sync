@@ -226,12 +226,29 @@ def focus(value, metadata, now):
     return value['active'] or choose(value, metadata, now) or value['current'] or next(iter(ordered(value, metadata)), '')
 
 
+def row_phase(item, current, active, now):
+    if active:
+        return 'working'
+    if item['corrupt']:
+        return 'attention'
+    if item['reason'] == 'auth':
+        return 'auth' if current else 'choose_account'
+    if item['reason'] in recovery.BLOCKED:
+        return 'attention'
+    if not item['pending']:
+        return 'caught_up'
+    return 'cooldown' if item['hard_until'] > now else 'retry'
+
+
 def view(value, metadata, units, session, now):
     identifier = focus(value, metadata, now)
     record = copy.deepcopy(value['accounts'].get(identifier, recovery.default()))
     record['enabled'] = value['enabled']
     record['corrupt'] |= value['corrupt']
-    known = [value['accounts'].get(i, recovery.default()) for i in ordered(value, metadata)]
+    identifiers = ordered(value, metadata)
+    known = [value['accounts'].get(i, recovery.default()) for i in identifiers]
+    current = value['accounts'].get(value['current']) if value['current'] in identifiers else None
+    waiting_for_account = False
     all_done = bool(known) and all(not item['pending'] for item in known)
     candidate = choose(value, metadata, now)
     if value['corrupt']:
@@ -255,10 +272,18 @@ def view(value, metadata, units, session, now):
             deadline, waiting = min(deadlines, key=lambda item: item[0])
             record = copy.deepcopy(waiting); record['enabled'] = value['enabled']; record['next_at'] = deadline
         else:
-            blocked = next((item for item in known if item['pending']), None)
-            if blocked is not None:
-                record = copy.deepcopy(blocked); record['enabled'] = value['enabled']
+            pending = [item for item in known if item['pending']]
+            # A saved login for another account can be retried when the user selects it in Steam.
+            actionable = next((item for item in pending if item is current or item['reason'] != 'auth' or item['corrupt']), None)
+            waiting_for_account = (actionable is None and current is not None and
+                                   row_phase(current, True, False, now) == 'caught_up')
+            record = copy.deepcopy(current if waiting_for_account else actionable or pending[0])
+            record['enabled'] = value['enabled']
     result = recovery.view(record, units, session, now)
+    if waiting_for_account and result['phase'] == 'caught_up':
+        result['phase'] = 'waiting_for_account'
+    elif result['phase'] == 'attention' and result['reason'] == 'auth' and current is None:
+        result['reason'] = 'choose_account'
     if value['enabled'] and record['reason'] == 'account_metadata' and not session:
         result.update(phase='attention', reason='account_metadata')
     if value['enabled'] and value['global_until'] > now:
@@ -266,10 +291,8 @@ def view(value, metadata, units, session, now):
     names = {item['id']: item['name'] for item in metadata['accounts']}
     result.update(current_account=names.get(value['current'], ''), active_account=names.get(value['active'], ''),
                   account_count=len(known), accounts=[])
-    for identifier in ordered(value, metadata):
-        item = value['accounts'].get(identifier, recovery.default())
-        phase = 'working' if identifier == value['active'] else ('attention' if item['reason'] in recovery.BLOCKED else
-                'caught_up' if not item['pending'] else 'cooldown' if item['hard_until'] > now else 'retry')
+    for identifier, item in zip(identifiers, known):
+        phase = row_phase(item, identifier == value['current'], identifier == value['active'], now)
         result['accounts'].append({'name': names.get(identifier, 'Steam account'), 'current': identifier == value['current'],
                                    'phase': phase, 'next_at': max(item['hard_until'], item['next_at']) or None})
     return result
